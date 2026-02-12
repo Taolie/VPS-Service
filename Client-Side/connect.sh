@@ -20,7 +20,7 @@ else
 fi
 
 # 获取脚本所在目录的绝对路径 (兼容 sh)
-SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
+SCRIPT_DIR=$(cd "$(dirname "$0")" || exit; pwd)
 PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
 CONFIG_FILE="$PROJECT_ROOT/config.ini"
 
@@ -82,7 +82,7 @@ check_dependency() {
     
     echo "${YELLOW}未检测到命令: $CMD_NAME${PLAIN}"
     printf "是否尝试自动安装? [y/N] "
-    read install_choice
+    read -r install_choice
     
     case "$install_choice" in
         [yY]*)
@@ -143,7 +143,7 @@ start_ssh_tunnel() {
         SSH_OPTS="-N -D $BIND_ADDR:$LOCAL_PORT" 
     fi
 
-    ssh $SSH_OPTS "$VPS_USER@$VPS_HOST"
+    ssh "$SSH_OPTS" "$VPS_USER@$VPS_HOST"
 }
 
 # 启动 Shadowsocks
@@ -190,7 +190,7 @@ echo "0. 退出"
 echo "==================================================="
 
 printf "请输入选项 [1-2]: "
-read choice
+read -r choice
 
 case "$choice" in
     1)

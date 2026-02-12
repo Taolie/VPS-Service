@@ -109,12 +109,12 @@ config_firewall() {
     if [[ "$OS" == "centos" ]]; then
         systemctl start firewalld
         systemctl enable firewalld
-        firewall-cmd --zone=public --add-port=$SS_PORT/tcp --permanent
-        firewall-cmd --zone=public --add-port=$SS_PORT/udp --permanent
+        firewall-cmd --zone=public --add-port="$SS_PORT"/tcp --permanent
+        firewall-cmd --zone=public --add-port="$SS_PORT"/udp --permanent
         firewall-cmd --reload
     else
-        ufw allow $SS_PORT/tcp
-        ufw allow $SS_PORT/udp
+        ufw allow "$SS_PORT"/tcp
+        ufw allow "$SS_PORT"/udp
         # 如果 ufw 没开，不需要强行开，防止把 ssh 关了
     fi
 }
@@ -140,7 +140,7 @@ show_info() {
     
     # 生成 ss:// 链接 (Base64编码: method:password@ip:port)
     SS_LINK_RAW="$SS_METHOD:$SS_PASSWORD@$IP:$SS_PORT"
-    SS_LINK="ss://$(echo -n $SS_LINK_RAW | base64)"
+    SS_LINK="ss://$(echo -n "$SS_LINK_RAW" | base64)"
 
     echo -e ""
     echo -e "==================================================="
