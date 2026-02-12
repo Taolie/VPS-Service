@@ -47,12 +47,13 @@ VPS-Service/
 *   **Android**: 使用 Shadowsocks / v2rayNG。
 *   **方法**: 填入第一步获取的 IP、端口、密码和加密方式即可。
 
-### 2. macOS / Linux
+### 2. macOS / Linux / OpenWrt (路由器)
 *   **推荐方式**: 使用统一启动脚本。
 *   **操作**: 
     1. 进入 `Client-Side/` 目录。
     2. 运行 `./connect.sh`。
-    3. 根据菜单选择 **SSH 隧道** (无需安装) 或 **Shadowsocks** (更稳定，脚本可辅助安装)。
+    3. 根据菜单选择模式。
+    *   **特别说明**: 如果脚本检测到在 **OpenWrt** 上运行，会自动将监听地址改为 `0.0.0.0`，方便局域网内其他设备连接。
 
 ### 3. Windows
 *   **推荐方式**: 使用统一启动脚本。
@@ -60,9 +61,6 @@ VPS-Service/
     1. 进入 `Client-Side/` 目录。
     2. 右键 `connect.ps1` -> **使用 PowerShell 运行**。
     3. 支持 SSH 隧道和 Shadowsocks 模式。
-
-### 4. 路由器 (OpenWrt)
-*   进入 `Client-Side/Router/` 目录，按照内部脚本说明进行配置。
 
 ---
 
