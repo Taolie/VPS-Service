@@ -80,7 +80,7 @@ install_ss() {
         apt-get install -y shadowsocks-libev
     fi
 
-    if ! command -v ss-server &> /dev/null; then
+    if ! command -v ss-server &>/dev/null; then
         echo -e "${RED}安装失败！请检查网络或源配置。${PLAIN}"
         exit 1
     fi
@@ -89,7 +89,7 @@ install_ss() {
 # 配置 Shadowsocks
 config_ss() {
     echo -e "${GREEN}正在生成配置文件...${PLAIN}"
-    cat > $CONFIG_FILE <<EOF
+    cat >$CONFIG_FILE <<EOF
 {
     "server":"0.0.0.0",
     "server_port":$SS_PORT,
@@ -124,7 +124,7 @@ start_ss() {
     echo -e "${GREEN}正在启动 Shadowsocks 服务...${PLAIN}"
     systemctl enable shadowsocks-libev
     systemctl restart shadowsocks-libev
-    
+
     if systemctl status shadowsocks-libev | grep -q "active (running)"; then
         echo -e "${GREEN}Shadowsocks 服务启动成功！${PLAIN}"
     else
@@ -137,7 +137,7 @@ start_ss() {
 show_info() {
     # 获取公网IP
     IP=$(curl -s http://ipv4.icanhazip.com)
-    
+
     # 生成 ss:// 链接 (Base64编码: method:password@ip:port)
     SS_LINK_RAW="$SS_METHOD:$SS_PASSWORD@$IP:$SS_PORT"
     SS_LINK="ss://$(echo -n "$SS_LINK_RAW" | base64)"

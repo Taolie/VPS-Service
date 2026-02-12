@@ -20,7 +20,10 @@ else
 fi
 
 # 获取脚本所在目录的绝对路径 (兼容 sh)
-SCRIPT_DIR=$(cd "$(dirname "$0")" || exit; pwd)
+SCRIPT_DIR=$(
+    cd "$(dirname "$0")" || exit
+    pwd
+)
 PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
 CONFIG_FILE="$PROJECT_ROOT/config.ini"
 
@@ -36,12 +39,12 @@ fi
 while IFS='=' read -r key value; do
     # 跳过注释 (# 开头) 和空行
     case "$key" in
-        \#*|"") continue ;;
+    \#* | "") continue ;;
     esac
     # 去除 value 可能存在的首尾空格 (简单处理)
     # export 变量
     export "$key=$value"
-done < "$CONFIG_FILE"
+done <"$CONFIG_FILE"
 
 # 检查配置是否填写
 if [ "$VPS_HOST" = "YOUR_VPS_IP" ]; then
@@ -75,49 +78,49 @@ fi
 # 检查并安装依赖
 check_dependency() {
     CMD_NAME="$1" # ssh 或 ss-local
-    
+
     if command -v "$CMD_NAME" >/dev/null 2>&1; then
         return 0
     fi
-    
+
     echo "${YELLOW}未检测到命令: $CMD_NAME${PLAIN}"
     printf "是否尝试自动安装? [y/N] "
     read -r install_choice
-    
+
     case "$install_choice" in
-        [yY]*)
-            if [ "$IS_OPENWRT" -eq 1 ]; then
-                echo "${GREEN}正在使用 opkg 安装 shadowsocks-libev-ss-local...${PLAIN}"
-                opkg update
-                opkg install shadowsocks-libev-ss-local
-            elif command -v brew >/dev/null 2>&1; then
-                echo "${GREEN}正在使用 Homebrew 安装...${PLAIN}"
-                brew install shadowsocks-libev
-            elif command -v apt-get >/dev/null 2>&1; then
-                echo "${GREEN}正在使用 apt 安装...${PLAIN}"
-                if [ "$(id -u)" -ne 0 ]; then
-                    sudo apt-get update && sudo apt-get install -y shadowsocks-libev
-                else
-                    apt-get update && apt-get install -y shadowsocks-libev
-                fi
-            elif command -v yum >/dev/null 2>&1; then
-                echo "${GREEN}正在使用 yum 安装...${PLAIN}"
-                 if [ "$(id -u)" -ne 0 ]; then
-                    sudo yum install -y shadowsocks-libev
-                else
-                    yum install -y shadowsocks-libev
-                fi
+    [yY]*)
+        if [ "$IS_OPENWRT" -eq 1 ]; then
+            echo "${GREEN}正在使用 opkg 安装 shadowsocks-libev-ss-local...${PLAIN}"
+            opkg update
+            opkg install shadowsocks-libev-ss-local
+        elif command -v brew >/dev/null 2>&1; then
+            echo "${GREEN}正在使用 Homebrew 安装...${PLAIN}"
+            brew install shadowsocks-libev
+        elif command -v apt-get >/dev/null 2>&1; then
+            echo "${GREEN}正在使用 apt 安装...${PLAIN}"
+            if [ "$(id -u)" -ne 0 ]; then
+                sudo apt-get update && sudo apt-get install -y shadowsocks-libev
             else
-                echo "${RED}错误: 无法识别包管理器，请手动安装。${PLAIN}"
-                return 1
+                apt-get update && apt-get install -y shadowsocks-libev
             fi
-            ;;
-        *)
-            echo "${YELLOW}已取消安装。${PLAIN}"
+        elif command -v yum >/dev/null 2>&1; then
+            echo "${GREEN}正在使用 yum 安装...${PLAIN}"
+            if [ "$(id -u)" -ne 0 ]; then
+                sudo yum install -y shadowsocks-libev
+            else
+                yum install -y shadowsocks-libev
+            fi
+        else
+            echo "${RED}错误: 无法识别包管理器，请手动安装。${PLAIN}"
             return 1
-            ;;
+        fi
+        ;;
+    *)
+        echo "${YELLOW}已取消安装。${PLAIN}"
+        return 1
+        ;;
     esac
-    
+
     # 再次检查
     if command -v "$CMD_NAME" >/dev/null 2>&1; then
         return 0
@@ -134,13 +137,13 @@ start_ssh_tunnel() {
     echo "目标服务器: ${YELLOW}$VPS_USER@$VPS_HOST${PLAIN}"
     echo "本地监听: ${YELLOW}$BIND_ADDR:$LOCAL_PORT${PLAIN}"
     echo "请在提示时输入 VPS 登录密码。"
-    
+
     # -g: 允许远程主机连接本地转发端口 (如果需要在路由器上开放 SSH 隧道)
     SSH_OPTS="-C -N -D $BIND_ADDR:$LOCAL_PORT"
     if [ "$IS_OPENWRT" -eq 1 ]; then
         # OpenWrt 的 ssh 客户端 (dropbear/openssh) 可能参数略有不同，但通常兼容
         # 如果是 Dropbear ssh，可能不支持 -C (压缩)，视版本而定
-        SSH_OPTS="-N -D $BIND_ADDR:$LOCAL_PORT" 
+        SSH_OPTS="-N -D $BIND_ADDR:$LOCAL_PORT"
     fi
 
     # SC2029: 忽略此警告，我们确实需要在本地展开变量
@@ -160,15 +163,15 @@ start_ss_client() {
     # ss-local 命令
     # 注意: OpenWrt 上的 ss-local 可能没有 -v 详细模式，或者参数行为略有不同
     # 但核心参数 -s -p -k -m -l -b 是一致的
-    
+
     ss-local -s "$VPS_HOST" \
-             -p "$SS_PORT" \
-             -k "$SS_PASSWORD" \
-             -m "$SS_METHOD" \
-             -l "$LOCAL_PORT" \
-             -b "$BIND_ADDR" \
-             -u \
-             -v
+        -p "$SS_PORT" \
+        -k "$SS_PASSWORD" \
+        -m "$SS_METHOD" \
+        -l "$LOCAL_PORT" \
+        -b "$BIND_ADDR" \
+        -u \
+        -v
 }
 
 # ==============================================================================
@@ -195,17 +198,17 @@ printf "请输入选项 [1-2]: "
 read -r choice
 
 case "$choice" in
-    1)
-        start_ssh_tunnel
-        ;;
-    2)
-        start_ss_client
-        ;;
-    0)
-        exit 0
-        ;;
-    *)
-        echo "${RED}无效选项，默认启动 SSH 隧道...${PLAIN}"
-        start_ssh_tunnel
-        ;;
+1)
+    start_ssh_tunnel
+    ;;
+2)
+    start_ss_client
+    ;;
+0)
+    exit 0
+    ;;
+*)
+    echo "${RED}无效选项，默认启动 SSH 隧道...${PLAIN}"
+    start_ssh_tunnel
+    ;;
 esac
