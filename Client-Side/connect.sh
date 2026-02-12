@@ -143,6 +143,8 @@ start_ssh_tunnel() {
         SSH_OPTS="-N -D $BIND_ADDR:$LOCAL_PORT" 
     fi
 
+    # SC2029: 忽略此警告，我们确实需要在本地展开变量
+    # shellcheck disable=SC2029
     ssh "$SSH_OPTS" "$VPS_USER@$VPS_HOST"
 }
 

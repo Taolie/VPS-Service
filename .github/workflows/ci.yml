@@ -1,4 +1,4 @@
-name: CI - Script Analysis
+name: CI - Code Quality & Security
 
 on:
   push:
@@ -7,29 +7,60 @@ on:
     branches: [ "main" ]
 
 jobs:
+  # 1. Shell 脚本语法检查 (原有功能)
   shellcheck:
-    name: ShellCheck (Linux/macOS/OpenWrt)
+    name: ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
+      - uses: actions/checkout@v3
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
         with:
           scandir: './'
-          severity: warning # 只报告警告及以上级别的错误
-          # 忽略一些常见但无害的警告，或者针对特定文件类型的检查
-          # SC2039: In POSIX sh, something is undefined. (我们在 connect.sh 里确实用了 sh，需要严格检查)
+          severity: warning
 
+  # 2. PowerShell 语法检查 (原有功能)
   psscriptanalyzer:
-    name: PSScriptAnalyzer (Windows)
+    name: PSScriptAnalyzer
     runs-on: windows-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
+      - uses: actions/checkout@v3
       - name: Run PSScriptAnalyzer
         shell: powershell
         run: |
           Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error,Warning
+
+  # 3. Shell 代码风格检查 (新增)
+  shfmt:
+    name: Shell Format (shfmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run shfmt
+        uses: mfinelli/setup-shfmt@v2
+      - name: Check formatting
+        run: shfmt -d . # -d 仅显示差异，不修改文件 (如果有差异则报错)
+
+  # 4. Markdown 文档格式检查 (新增)
+  markdownlint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v11
+        with:
+          globs: '**/*.md'
+
+  # 5. 敏感信息扫描 (新增 - 非常重要)
+  gitleaks:
+    name: Secret Scanning (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # 需要完整的提交历史来扫描
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2.3.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
