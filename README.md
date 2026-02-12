@@ -48,27 +48,21 @@ VPS-Service/
 *   **方法**: 填入第一步获取的 IP、端口、密码和加密方式即可。
 
 ### 2. macOS / Linux
-你可以选择两种方式：
-*   **方案 A (推荐): 使用 GUI 客户端**
-    *   下载 `ShadowsocksX-NG` (macOS) 或 `Shadowsocks-Qt5` (Linux)。
-    *   导入 `ss://` 链接。
-*   **方案 B (原生): 使用 SSH 隧道 (无需服务端支持)**
-    *   进入 `Client-Side/macOS_Linux/` 目录。
-    *   修改 `vps_tunnel.sh` 填入 VPS IP。
-    *   运行 `./vps_tunnel.sh start` 或双击 `Start.command`。
+*   **推荐方式**: 使用统一启动脚本。
+*   **操作**: 
+    1. 进入 `Client-Side/` 目录。
+    2. 运行 `./connect.sh`。
+    3. 根据菜单选择 **SSH 隧道** (无需安装) 或 **Shadowsocks** (更稳定，脚本可辅助安装)。
 
 ### 3. Windows
-*   **方案 A (推荐): 使用 GUI 客户端**
-    *   下载 `Shadowsocks-Windows`。
-    *   导入 `ss://` 链接。
-*   **方案 B (原生): 使用 PowerShell 脚本**
-    *   进入 `Client-Side/Windows/` 目录。
-    *   右键 `Start-SSHTunnel.ps1` -> 使用 PowerShell 运行。
+*   **推荐方式**: 使用统一启动脚本。
+*   **操作**:
+    1. 进入 `Client-Side/` 目录。
+    2. 右键 `connect.ps1` -> **使用 PowerShell 运行**。
+    3. 支持 SSH 隧道和 Shadowsocks 模式。
 
 ### 4. 路由器 (OpenWrt)
-*   进入 `Client-Side/Router/` 目录。
-*   修改 `router_ss.sh` 中的服务器信息。
-*   上传到路由器并运行，启动 SOCKS5 代理。
+*   进入 `Client-Side/Router/` 目录，按照内部脚本说明进行配置。
 
 ---
 
@@ -78,5 +72,15 @@ VPS-Service/
     *   因为 Trojan 需要域名和 SSL 证书。本项目采用了更通用的 Shadowsocks 方案，无需域名即可使用。
     
 2.  **连接不上怎么办?**
-    *   请首先检查 VPS 的防火墙 (Firewall/Security Group) 是否放行了 TCP 和 UDP 端口。
+    *   **90% 的原因是防火墙没开。** 服务器有两道门，都需要打开：
+        ```
+        Internet (你)
+           ↓
+        [云厂商安全组]  <-- 必须去网页控制台手动放行 (TCP+UDP 端口)
+           ↓
+        [VPS 系统防火墙] <-- 脚本已为您自动打开 (ufw/firewalld)
+           ↓
+        [SS 服务]
+        ```
+    *   请登录阿里云/腾讯云/AWS 控制台，找到“安全组”或“防火墙”设置，添加一条入站规则，允许脚本生成的端口 (TCP+UDP)。
     *   检查密码和加密方式是否填写正确 (Shadowsocks 对此非常敏感)。

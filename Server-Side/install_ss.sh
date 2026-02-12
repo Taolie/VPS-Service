@@ -154,7 +154,11 @@ show_info() {
     echo -e "${GREEN}SS 链接 (复制导入客户端):${PLAIN}"
     echo -e "${YELLOW}$SS_LINK${PLAIN}"
     echo -e "==================================================="
-    echo -e "提示: 如果连不上，请检查云服务商的安全组是否放行了端口 $SS_PORT (TCP/UDP)。"
+    echo -e "${RED}【重要提示】请务必执行以下操作，否则无法连接：${PLAIN}"
+    echo -e "1. 登录您的云服务器控制台 (阿里云/腾讯云/AWS等)。"
+    echo -e "2. 找到 [安全组] 或 [防火墙] 设置。"
+    echo -e "3. 添加一条规则：允许 [TCP+UDP] 协议，端口 [${YELLOW}$SS_PORT${PLAIN}]。"
+    echo -e "   (脚本已自动为您开放了 VPS 内部的防火墙，但无法操作云平台的安全组)"
 }
 
 # 主流程

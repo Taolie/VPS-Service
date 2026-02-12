@@ -12,3 +12,5 @@
 ## 已完成 (Done)
 - [x] 创建基础项目结构。
 - [x] 编写服务端安装脚本。
+- [x] 实现 macOS/Linux/Windows 统一连接脚本 (`connect.sh`, `connect.ps1`)。
+- [x] 重构客户端目录结构，移除冗余脚本。
