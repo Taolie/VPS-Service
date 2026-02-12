@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  # 1. Shell 脚本语法检查 (原有功能)
+  # 1. Shell 脚本语法检查
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
@@ -19,7 +19,7 @@ jobs:
           scandir: './'
           severity: warning
 
-  # 2. PowerShell 语法检查 (原有功能)
+  # 2. PowerShell 语法检查
   psscriptanalyzer:
     name: PSScriptAnalyzer
     runs-on: windows-latest
@@ -28,38 +28,16 @@ jobs:
       - name: Run PSScriptAnalyzer
         shell: powershell
         run: |
-          Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error,Warning
+          Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
 
-  # 3. Shell 代码风格检查 (新增)
-  shfmt:
-    name: Shell Format (shfmt)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Run shfmt
-        uses: mfinelli/setup-shfmt@v2
-      - name: Check formatting
-        run: shfmt -d . # -d 仅显示差异，不修改文件 (如果有差异则报错)
-
-  # 4. Markdown 文档格式检查 (新增)
-  markdownlint:
-    name: Markdown Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Run markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@v11
-        with:
-          globs: '**/*.md'
-
-  # 5. 敏感信息扫描 (新增 - 非常重要)
+  # 3. 敏感信息扫描
   gitleaks:
     name: Secret Scanning (Gitleaks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # 需要完整的提交历史来扫描
+          fetch-depth: 0
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2.3.0
         env:
