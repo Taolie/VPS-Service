@@ -1,5 +1,9 @@
-# VPS 客户端统一连接工具 (Windows PowerShell)
+﻿# VPS 客户端统一连接工具 (Windows PowerShell)
 # ==============================================================================
+# [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
+# [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseShouldProcessForStateChangingFunctions", "")]
+# [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSShouldProcess", "")]
+# [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "")]
 
 # 设置控制台编码为 UTF-8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -11,24 +15,25 @@ $ConfigFile = Join-Path $ProjectRoot "config.ini"
 
 # 检查配置文件
 if (-not (Test-Path $ConfigFile)) {
-    Write-Host "错误: 找不到配置文件 $ConfigFile" -ForegroundColor Red
-    Write-Host "请先复制 config.ini.example 为 config.ini 并填写配置。"
+    Write-Output "错误: 找不到配置文件 $ConfigFile"
+    Write-Output "请先复制 config.ini.example 为 config.ini 并填写配置。"
     exit
 }
 
 # 读取配置文件 (简单的 INI 解析)
-$Config = Get-Content $ConfigFile | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
+Get-Content $ConfigFile | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
     $parts = $_ -split "=", 2
     if ($parts.Count -eq 2) {
         $key = $parts[0].Trim()
         $value = $parts[1].Trim()
-        New-Variable -Name $key -Value $value -Force
+        # 动态创建变量
+        New-Variable -Name $key -Value $value -Force -Scope Script
     }
 }
 
 # 检查配置是否填写
-if ($VPS_HOST -eq "YOUR_VPS_IP") {
-    Write-Host "错误: 请先编辑 config.ini 填入 VPS IP 地址！" -ForegroundColor Red
+if ($script:VPS_HOST -eq "YOUR_VPS_IP") {
+    Write-Output "错误: 请先编辑 config.ini 填入 VPS IP 地址！"
     exit
 }
 
@@ -37,48 +42,42 @@ if ($VPS_HOST -eq "YOUR_VPS_IP") {
 # ==============================================================================
 
 function Start-SSHTunnel {
-    Write-Host "正在启动 SSH 隧道..." -ForegroundColor Green
-    Write-Host "目标服务器: $VPS_USER@$VPS_HOST" -ForegroundColor Yellow
-    Write-Host "本地端口: $LOCAL_PORT" -ForegroundColor Yellow
-    Write-Host "请在提示时输入 VPS 登录密码。"
+    param()
     
-    # -N: 不执行远程命令
-    # -D: 动态端口转发 (SOCKS5)
-    # -C: 压缩数据
-    ssh -C -N -D 127.0.0.1:$LOCAL_PORT "$VPS_USER@$VPS_HOST"
+    Write-Output "正在启动 SSH 隧道..."
+    Write-Output "目标服务器: $script:VPS_USER@$script:VPS_HOST"
+    Write-Output "本地端口: $script:LOCAL_PORT"
+    Write-Output "请在提示时输入 VPS 登录密码。"
+    
+    ssh -C -N -D 127.0.0.1:$script:LOCAL_PORT "$script:VPS_USER@$script:VPS_HOST"
 }
 
 function Start-SSClient {
+    param()
+
     # 检查 ss-local 是否存在
     $SSPath = Join-Path $ScriptDir "ss-local.exe"
     
     if (-not (Test-Path $SSPath)) {
-        Write-Host "未检测到 Shadowsocks 客户端 (ss-local.exe)。" -ForegroundColor Yellow
+        Write-Output "未检测到 Shadowsocks 客户端 (ss-local.exe)。"
         $Download = Read-Host "是否尝试自动下载 (从 GitHub)? [y/N]"
         
         if ($Download -match "^[yY]") {
-            Write-Host "正在下载 ss-local (Windows版)..." -ForegroundColor Green
-            try {
-                # 这里为了简单，假设一个固定的下载链接或者提示用户去哪下载
-                # 由于 GitHub Releases 链接经常变动且可能被墙，这里改为提示用户下载
-                Write-Host "由于网络原因，无法自动下载。请手动下载 Shadowsocks-libev for Windows。" -ForegroundColor Red
-                Write-Host "下载地址: https://github.com/shadowsocks/shadowsocks-libev/releases"
-                Write-Host "解压后将 ss-local.exe 放入此脚本同级目录即可。"
-                Start-Sleep -Seconds 5
-                return
-            } catch {
-                Write-Host "下载失败: $_" -ForegroundColor Red
-                return
-            }
+            Write-Output "正在下载 ss-local (Windows版)..."
+            Write-Output "由于网络原因，无法自动下载。请手动下载 Shadowsocks-libev for Windows。"
+            Write-Output "下载地址: https://github.com/shadowsocks/shadowsocks-libev/releases"
+            Write-Output "解压后将 ss-local.exe 放入此脚本同级目录即可。"
+            Start-Sleep -Seconds 5
+            return
         } else {
             return
         }
     }
 
-    Write-Host "正在启动 Shadowsocks 客户端..." -ForegroundColor Green
-    Write-Host "服务器: $VPS_HOST:$SS_PORT" -ForegroundColor Yellow
+    Write-Output "正在启动 Shadowsocks 客户端..."
+    Write-Output "服务器: $script:VPS_HOST:$script:SS_PORT"
     
-    & "$SSPath" -s "$VPS_HOST" -p "$SS_PORT" -k "$SS_PASSWORD" -m "$SS_METHOD" -l "$LOCAL_PORT" -b "127.0.0.1" -v
+    & "$SSPath" -s "$script:VPS_HOST" -p "$script:SS_PORT" -k "$script:SS_PASSWORD" -m "$script:SS_METHOD" -l "$script:LOCAL_PORT" -b "127.0.0.1" -v
 }
 
 # ==============================================================================
@@ -86,23 +85,21 @@ function Start-SSClient {
 # ==============================================================================
 
 Clear-Host
-Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host "VPS 客户端统一连接工具 (Windows)" -ForegroundColor Cyan
-Write-Host "==================================================="
-Write-Host "当前配置:"
-Write-Host "  VPS IP: $VPS_HOST" -ForegroundColor Yellow
-Write-Host "  本地端口: $LOCAL_PORT" -ForegroundColor Yellow
-Write-Host "==================================================="
-Write-Host "1. 启动 SSH 隧道模式 (推荐，无需安装)" -ForegroundColor Green
-Write-Host "2. 启动 Shadowsocks 模式 (需下载 ss-local.exe)" -ForegroundColor Yellow
-Write-Host "0. 退出"
-Write-Host "==================================================="
+Write-Output "==================================================="
+Write-Output "VPS 客户端统一连接工具 (Windows)"
+Write-Output "==================================================="
+Write-Output "当前配置:"
+Write-Output "  VPS IP: $script:VPS_HOST"
+Write-Output "  本地端口: $script:LOCAL_PORT"
+Write-Output "==================================================="
+Write-Output "1. 启动 SSH 隧道模式 (推荐，无需安装)"
+Write-Output "2. 启动 Shadowsocks 模式 (需下载 ss-local.exe)"
+Write-Output "0. 退出"
+Write-Output "==================================================="
 
 $Choice = Read-Host "请输入选项 [1-2]"
 
 switch ($Choice) {
     "1" { Start-SSHTunnel }
     "2" { Start-SSClient }
-    "0" { exit }
-    default { Start-SSHTunnel }
-}
+    
