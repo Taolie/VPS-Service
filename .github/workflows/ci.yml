@@ -1,0 +1,35 @@
+name: CI - Script Analysis
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  shellcheck:
+    name: ShellCheck (Linux/macOS/OpenWrt)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './'
+          severity: warning # 只报告警告及以上级别的错误
+          # 忽略一些常见但无害的警告，或者针对特定文件类型的检查
+          # SC2039: In POSIX sh, something is undefined. (我们在 connect.sh 里确实用了 sh，需要严格检查)
+
+  psscriptanalyzer:
+    name: PSScriptAnalyzer (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run PSScriptAnalyzer
+        shell: powershell
+        run: |
+          Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error,Warning
