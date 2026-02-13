@@ -174,18 +174,63 @@ config_firewall() {
   fi
 }
 
-# 重启服务
-restart_xray() {
-  echo -e "${GREEN}正在重启 Xray 服务...${PLAIN}"
-  systemctl restart xray
-  systemctl enable xray
-  
-  if systemctl status xray | grep -q "active (running)"; then
-    echo -e "${GREEN}Xray 服务启动成功！${PLAIN}"
+# 开启 BBR 加速
+enable_bbr() {
+  echo -e "${GREEN}正在检查 BBR 加速状态...${PLAIN}"
+  if grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf && grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf; then
+    echo -e "${GREEN}BBR 已开启，跳过。${PLAIN}"
   else
-    echo -e "${RED}Xray 服务启动失败！请查看日志 systemctl status xray${PLAIN}"
-    exit 1
+    echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+    echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+    sysctl -p >/dev/null 2>&1
+    echo -e "${GREEN}BBR 开启成功！${PLAIN}"
   fi
+}
+
+# 配置服务保活 (Systemd Keepalive)
+config_keepalive() {
+  # 创建 override 目录
+  mkdir -p /etc/systemd/system/xray.service.d
+  
+  # 写入 override 配置：失败自动重启，间隔 5 秒
+  cat > /etc/systemd/system/xray.service.d/override.conf <<EOF
+[Service]
+Restart=on-failure
+RestartSec=5s
+EOF
+  
+  # 重载配置
+  systemctl daemon-reload
+  echo -e "${GREEN}已配置 Xray 服务自动重启 (保活)。${PLAIN}"
+}
+
+# 重启服务 (带重试机制)
+restart_xray() {
+  echo -e "${GREEN}正在启动 Xray 服务...${PLAIN}"
+  config_keepalive
+  
+  MAX_RETRIES=3
+  COUNT=0
+  
+  while [ $COUNT -lt $MAX_RETRIES ]; do
+    systemctl restart xray
+    systemctl enable xray >/dev/null 2>&1
+    sleep 2
+    
+    if systemctl is-active --quiet xray; then
+      echo -e "${GREEN}Xray 服务启动成功！${PLAIN}"
+      return 0
+    else
+      echo -e "${RED}启动失败，正在尝试重试 ($((COUNT+1))/$MAX_RETRIES)...${PLAIN}"
+      # 尝试输出最后几行日志帮助调试
+      journalctl -u xray --no-pager -n 10
+      COUNT=$((COUNT+1))
+      sleep 3
+    fi
+  done
+  
+  echo -e "${RED}错误: Xray 服务启动连续失败，请检查配置文件或端口占用。${PLAIN}"
+  exit 1
 }
 
 # 显示连接信息
@@ -224,6 +269,7 @@ show_info() {
 # 主流程
 get_os
 install_dependencies
+enable_bbr
 install_xray
 config_xray
 config_firewall
