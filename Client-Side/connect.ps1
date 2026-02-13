@@ -1,4 +1,4 @@
-﻿# VPS 客户端统一连接工具 (Windows PowerShell)
+# VPS 客户端统一连接工具 (Windows PowerShell)
 # ==============================================================================
 # [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 # [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseShouldProcessForStateChangingFunctions", "")]
@@ -55,6 +55,25 @@ function Ensure-Config {
     }
 }
 
+function Set-SystemProxy {
+    Write-Output "正在设置 Windows 系统代理 (SOCKS5)..."
+    $RegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    # 启用代理
+    Set-ItemProperty -Path $RegPath -Name ProxyEnable -Value 1
+    # 设置 SOCKS 代理
+    Set-ItemProperty -Path $RegPath -Name ProxyServer -Value "socks=127.0.0.1:$script:LOCAL_PORT"
+    # 绕过本地
+    Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value "<local>;127.*;192.168.*"
+    Write-Output "✅ 系统代理已开启 (127.0.0.1:$script:LOCAL_PORT)"
+}
+
+function Unset-SystemProxy {
+    Write-Output "`n正在关闭 Windows 系统代理..."
+    $RegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    Set-ItemProperty -Path $RegPath -Name ProxyEnable -Value 0
+    Write-Output "✅ 系统代理已关闭"
+}
+
 function Start-SSHTunnel {
     param()
     
@@ -62,11 +81,19 @@ function Start-SSHTunnel {
     if (-not $script:VPS_USER) { $script:VPS_USER = "root" }
     
     Write-Output "正在启动 SSH 隧道..."
+    
+    Set-SystemProxy
+    Register-EngineEvent PowerShell.Exiting -Action { Unset-SystemProxy } -SupportEvent | Out-Null
+    
     Write-Output "目标服务器: $script:VPS_USER@$script:VPS_HOST"
     Write-Output "本地端口: $script:LOCAL_PORT"
     Write-Output "请在提示时输入 VPS 登录密码。"
     
-    ssh -C -N -D 127.0.0.1:$script:LOCAL_PORT "$script:VPS_USER@$script:VPS_HOST"
+    try {
+        ssh -C -N -D 127.0.0.1:$script:LOCAL_PORT "$script:VPS_USER@$script:VPS_HOST"
+    } finally {
+        Unset-SystemProxy
+    }
 }
 
 function Start-SSClient {
@@ -97,9 +124,16 @@ function Start-SSClient {
     }
 
     Write-Output "正在启动 Shadowsocks 客户端..."
+    Set-SystemProxy
+    Register-EngineEvent PowerShell.Exiting -Action { Unset-SystemProxy } -SupportEvent | Out-Null
+    
     Write-Output "服务器: $script:VPS_HOST:$script:SS_PORT"
     
-    & "$SSPath" -s "$script:VPS_HOST" -p "$script:SS_PORT" -k "$script:SS_PASSWORD" -m "$script:SS_METHOD" -l "$script:LOCAL_PORT" -b "127.0.0.1" -v
+    try {
+        & "$SSPath" -s "$script:VPS_HOST" -p "$script:SS_PORT" -k "$script:SS_PASSWORD" -m "$script:SS_METHOD" -l "$script:LOCAL_PORT" -b "127.0.0.1" -v
+    } finally {
+        Unset-SystemProxy
+    }
 }
 
 function Start-V2RayN {
@@ -195,4 +229,5 @@ switch ($Choice) {
     "1" { Start-SSHTunnel }
     "2" { Start-SSClient }
     "3" { Start-V2RayN }
-    
+    "0" { exit }
+}

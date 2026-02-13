@@ -197,8 +197,9 @@ start_ss_client() {
 # 存储节点的文件
 NODES_FILE="$SCRIPT_DIR/nodes.dat"
 
-# 设置 macOS 系统代理
-set_macos_proxy() {
+# 设置系统代理 (macOS / Linux Gnome/KDE)
+set_system_proxy() {
+  # macOS
   if [ "$(uname)" = "Darwin" ]; then
     INTERFACE=$(route -n get default 2>/dev/null | grep interface | awk '{print $2}')
     if [ -n "$INTERFACE" ]; then
@@ -208,11 +209,23 @@ set_macos_proxy() {
         networksetup -setsocksfirewallproxy "$SERVICE" 127.0.0.1 "$LOCAL_PORT"
       fi
     fi
+  # Linux Gnome
+  elif command -v gsettings >/dev/null 2>&1; then
+    echo "${GREEN}检测到 Gnome 环境，正在开启系统代理...${PLAIN}"
+    gsettings set org.gnome.system.proxy mode 'manual'
+    gsettings set org.gnome.system.proxy.socks host '127.0.0.1'
+    gsettings set org.gnome.system.proxy.socks port "$LOCAL_PORT"
+  # Linux KDE
+  elif command -v kwriteconfig5 >/dev/null 2>&1; then
+    echo "${GREEN}检测到 KDE 环境，正在开启系统代理...${PLAIN}"
+    kwriteconfig5 --file kioslaverc --group 'Proxy Settings' --key ProxyType 1
+    kwriteconfig5 --file kioslaverc --group 'Proxy Settings' --key socksProxy "socks://127.0.0.1:$LOCAL_PORT"
   fi
 }
 
-# 清除 macOS 系统代理
-unset_macos_proxy() {
+# 清除系统代理
+unset_system_proxy() {
+  # macOS
   if [ "$(uname)" = "Darwin" ]; then
     INTERFACE=$(route -n get default 2>/dev/null | grep interface | awk '{print $2}')
     if [ -n "$INTERFACE" ]; then
@@ -223,6 +236,16 @@ unset_macos_proxy() {
         networksetup -setsocksfirewallproxystate "$SERVICE" off
       fi
     fi
+  # Linux Gnome
+  elif command -v gsettings >/dev/null 2>&1; then
+    echo ""
+    echo "${YELLOW}正在关闭 Gnome 系统代理...${PLAIN}"
+    gsettings set org.gnome.system.proxy mode 'none'
+  # Linux KDE
+  elif command -v kwriteconfig5 >/dev/null 2>&1; then
+    echo ""
+    echo "${YELLOW}正在关闭 KDE 系统代理...${PLAIN}"
+    kwriteconfig5 --file kioslaverc --group 'Proxy Settings' --key ProxyType 0
   fi
 }
 
@@ -362,8 +385,8 @@ start_vless_client() {
   if [ -z "$SELECTED_LINK" ]; then echo "${RED}无效选择${PLAIN}"; return 1; fi
 
   generate_xray_config "$SELECTED_LINK"
-  set_macos_proxy
-  trap unset_macos_proxy EXIT INT TERM
+  set_system_proxy
+  trap unset_system_proxy EXIT INT TERM
 
   echo "${GREEN}VLESS 代理启动成功 (绕过大陆模式)...${PLAIN}"
   "$XRAY_BIN" run -c "$SCRIPT_DIR/config.json"
