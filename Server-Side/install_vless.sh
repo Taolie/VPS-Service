@@ -32,6 +32,18 @@ PORT=443
 DEST_SITE="www.microsoft.com:443"
 SERVER_NAMES='["www.microsoft.com","www.microsoft.com"]'
 
+# 获取端口配置
+echo -e "${YELLOW}请输入 VLESS 服务端口 [1-65535] (默认: 443):${PLAIN}"
+read -r INPUT_PORT
+if [[ -n "$INPUT_PORT" ]]; then
+  if [[ "$INPUT_PORT" -ge 1 && "$INPUT_PORT" -le 65535 ]]; then
+    PORT="$INPUT_PORT"
+  else
+    echo -e "${RED}端口输入错误，将使用默认端口 443${PLAIN}"
+  fi
+fi
+echo -e "${GREEN}当前使用端口: ${PORT}${PLAIN}"
+
 # 获取系统版本
 get_os() {
   if [[ -f /etc/redhat-release ]]; then

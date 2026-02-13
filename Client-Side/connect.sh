@@ -4,13 +4,21 @@
 # VPS 客户端统一连接工具 (Universal: macOS / Linux / OpenWrt)
 # ==============================================================================
 
-# 颜色定义 (兼容 sh)
+# 颜色定义 (兼容 sh/bash/zsh，优先使用 tput)
 if [ -t 1 ]; then
-  RED=$(printf '\033[0;31m')
-  GREEN=$(printf '\033[0;32m')
-  YELLOW=$(printf '\033[0;33m')
-  BLUE=$(printf '\033[0;34m')
-  PLAIN=$(printf '\033[0m')
+  if command -v tput >/dev/null 2>&1; then
+    RED=$(tput setaf 1)
+    GREEN=$(tput setaf 2)
+    YELLOW=$(tput setaf 3)
+    BLUE=$(tput setaf 4)
+    PLAIN=$(tput sgr0)
+  else
+    RED=$(printf '\033[0;31m')
+    GREEN=$(printf '\033[0;32m')
+    YELLOW=$(printf '\033[0;33m')
+    BLUE=$(printf '\033[0;34m')
+    PLAIN=$(printf '\033[0m')
+  fi
 else
   RED=""
   GREEN=""
