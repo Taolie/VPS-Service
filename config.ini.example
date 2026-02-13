@@ -24,3 +24,8 @@ SS_PORT=8388
 
 # 6. Shadowsocks 加密方式 (仅手机/路由器使用)
 SS_METHOD=chacha20-ietf-poly1305
+
+# 7. [可选] VLESS 链接 (用于 VLESS-Reality 模式自动复制)
+#    运行 install_vless.sh 后获得的 vless://... 链接
+#    如果在 Windows 脚本中使用，填入此处可免去每次手动输入
+# VLESS_URI=vless://uuid@ip:443?security=reality...

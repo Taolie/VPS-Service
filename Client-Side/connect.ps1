@@ -80,6 +80,75 @@ function Start-SSClient {
     & "$SSPath" -s "$script:VPS_HOST" -p "$script:SS_PORT" -k "$script:SS_PASSWORD" -m "$script:SS_METHOD" -l "$script:LOCAL_PORT" -b "127.0.0.1" -v
 }
 
+function Start-V2RayN {
+    param()
+    
+    $V2RayNDir = Join-Path $ScriptDir "v2rayN-Core"
+    $V2RayNExe = Join-Path $V2RayNDir "v2rayN.exe"
+    $ZipPath = Join-Path $ScriptDir "v2rayN-Core.zip"
+    # 使用 v2rayN 6.23 正式版 (稳定且包含 Core)
+    $DownloadUrl = "https://github.com/2dust/v2rayN/releases/download/6.23/v2rayN-Core.zip"
+
+    # 1. 检查并下载 v2rayN
+    if (-not (Test-Path $V2RayNExe)) {
+        Write-Output "未检测到 v2rayN 客户端。"
+        $Download = Read-Host "是否自动下载 v2rayN-Core (约 50MB)? [Y/n]"
+        
+        if ($Download -match "^[nN]") {
+            Write-Output "已取消。请手动下载 v2rayN-Core.zip 解压到 Client-Side/v2rayN-Core 目录。"
+            return
+        }
+
+        Write-Output "正在下载 v2rayN-Core.zip (来自 GitHub)..."
+        try {
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath -UseBasicParsing
+        } catch {
+            Write-Output "下载失败: $_"
+            Write-Output "请检查网络或手动下载: $DownloadUrl"
+            return
+        }
+
+        Write-Output "正在解压..."
+        Expand-Archive -Path $ZipPath -DestinationPath $V2RayNDir -Force
+        Remove-Item $ZipPath -Force
+        Write-Output "安装完成！"
+    }
+
+    # 2. 获取 VLESS 链接
+    $VlessLink = ""
+    # 尝试从 config.ini 读取 (如果存在)
+    if ($script:VLESS_URI) {
+        $VlessLink = $script:VLESS_URI
+    } else {
+        Write-Output "`n请输入您的 VLESS 链接 (vless://...):"
+        Write-Output "(您可以将其添加到 config.ini 的 VLESS_URI=... 以便自动读取)"
+        $VlessLink = Read-Host "链接"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($VlessLink)) {
+        Write-Output "错误: 链接不能为空。"
+        return
+    }
+
+    # 3. 复制到剪贴板并启动
+    try {
+        Set-Clipboard -Value $VlessLink
+        Write-Output "✅ VLESS 链接已复制到剪贴板！"
+    } catch {
+        Write-Output "⚠️ 无法访问剪贴板，请手动复制链接。"
+    }
+
+    Write-Output "正在启动 v2rayN..."
+    Start-Process -FilePath $V2RayNExe
+
+    Write-Output "`n==================================================="
+    Write-Output "🚀 v2rayN 已启动！请按以下步骤操作："
+    Write-Output "1. 在 v2rayN 界面中，按下 [Ctrl + V] 导入服务器。"
+    Write-Output "2. 选中导入的服务器，按 [Enter] 设为活动服务器。"
+    Write-Output "3. 在底部系统托盘图标右键 -> 自动配置系统代理。"
+    Write-Output "==================================================="
+}
+
 # ==============================================================================
 # 主菜单
 # ==============================================================================
@@ -94,12 +163,14 @@ Write-Output "  本地端口: $script:LOCAL_PORT"
 Write-Output "==================================================="
 Write-Output "1. 启动 SSH 隧道模式 (推荐，无需安装)"
 Write-Output "2. 启动 Shadowsocks 模式 (需下载 ss-local.exe)"
+Write-Output "3. 启动 VLESS-Reality 模式 (自动下载 v2rayN)"
 Write-Output "0. 退出"
 Write-Output "==================================================="
 
-$Choice = Read-Host "请输入选项 [1-2]"
+$Choice = Read-Host "请输入选项 [1-3]"
 
 switch ($Choice) {
     "1" { Start-SSHTunnel }
     "2" { Start-SSClient }
+    "3" { Start-V2RayN }
     
