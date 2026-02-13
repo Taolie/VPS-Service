@@ -1,0 +1,42 @@
+{
+  "log": { "loglevel": "warning" },
+  "inbounds": [
+    {
+      "port": 1080,
+      "listen": "127.0.0.1",
+      "protocol": "socks",
+      "settings": { "udp": true }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "69.63.212.192",
+            "port": 8443,
+            "users": [
+              {
+                "id": "59f108ed-d259-4d2d-a897-3b43d352aea0",
+                "flow": "xtls-rprx-vision",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "www.apple.com",
+          "publicKey": "P4VhORSE1qTOOA_Fuxvv94W47tMoEGFodKTKeuOSAy8",
+          "fingerprint": "chrome",
+          "shortId": "abcd1234",
+          "spiderX": ""
+        }
+      }
+    }
+  ]
+}

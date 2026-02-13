@@ -295,7 +295,7 @@ generate_xray_config() {
   # 生成 config.json
   cat > "$SCRIPT_DIR/config.json" <<EOF
 {
-  "log": { "loglevel": "warning" },
+  "log": { "loglevel": "info", "access": "/dev/stdout", "error": "/dev/stderr" },
   "inbounds": [
     {
       "port": $LOCAL_PORT,
@@ -372,6 +372,20 @@ start_vless_client() {
     echo "${YELLOW}请输入 VLESS 链接 (vless://...):${PLAIN}"
     echo "(提示: 您可以将链接填入 config.ini 的 VLESS_URI 字段以自动读取)"
     read -r VLESS_LINK
+    
+    # 保存链接到 config.ini
+    if [ -n "$VLESS_LINK" ]; then
+      if grep -q "^VLESS_URI=" "$CONFIG_FILE"; then
+        # 如果存在，替换
+        # 使用 temp 文件兼容 macOS/Linux sed 差异
+        sed "s|^VLESS_URI=.*|VLESS_URI=$VLESS_LINK|" "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+      else
+        # 如果不存在，追加
+        echo "" >> "$CONFIG_FILE"
+        echo "VLESS_URI=$VLESS_LINK" >> "$CONFIG_FILE"
+      fi
+      echo "${GREEN}链接已保存到 config.ini${PLAIN}"
+    fi
   fi
 
   if [ -z "$VLESS_LINK" ]; then
