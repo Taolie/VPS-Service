@@ -204,6 +204,11 @@ start_ss_client() {
 install_xray_client() {
   echo "${GREEN}正在检测系统架构...${PLAIN}"
   OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+  # Xray 发布文件名使用 'macos' 而不是 'darwin'
+  if [ "$OS" = "darwin" ]; then
+    OS="macos"
+  fi
+  
   ARCH=$(uname -m)
 
   case "$ARCH" in
