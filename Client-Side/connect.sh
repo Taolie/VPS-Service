@@ -191,7 +191,7 @@ start_ss_client() {
 }
 
 # ------------------------------------------------------------------------------
-# VLESS-Reality 客户端逻辑 (增强版: 多节点 + 分流 + 自动代理)
+# VLESS-Reality 客户端逻辑 (增强版: 多节点 + 分流 + 自动代理 + TProxy)
 # ------------------------------------------------------------------------------
 
 # 存储节点的文件
@@ -199,6 +199,8 @@ NODES_FILE="$SCRIPT_DIR/nodes.dat"
 
 # 设置系统代理 (macOS / Linux Gnome/KDE)
 set_system_proxy() {
+  if [ "$IS_OPENWRT" -eq 1 ]; then return; fi
+
   # macOS
   if [ "$(uname)" = "Darwin" ]; then
     INTERFACE=$(route -n get default 2>/dev/null | grep interface | awk '{print $2}')
@@ -225,6 +227,8 @@ set_system_proxy() {
 
 # 清除系统代理
 unset_system_proxy() {
+  if [ "$IS_OPENWRT" -eq 1 ]; then return; fi
+
   # macOS
   if [ "$(uname)" = "Darwin" ]; then
     INTERFACE=$(route -n get default 2>/dev/null | grep interface | awk '{print $2}')
@@ -309,7 +313,7 @@ generate_xray_config() {
 
   cat > "$SCRIPT_DIR/config.json" <<EOF
 {
-  "log": { "loglevel": "info" },
+  "log": { "loglevel": "info", "access": "/dev/stdout", "error": "/dev/stderr" },
   "routing": {
     "domainStrategy": "IPOnDemand",
     "rules": [
@@ -324,6 +328,23 @@ generate_xray_config() {
       "protocol": "socks",
       "settings": { "udp": true }
     }
+EOF
+
+  # OpenWrt TProxy 入站
+  if [ "$IS_OPENWRT" -eq 1 ]; then
+    cat >> "$SCRIPT_DIR/config.json" <<EOF
+    ,
+    {
+      "port": 12345,
+      "protocol": "dokodemo-door",
+      "settings": { "network": "tcp,udp", "followRedirect": true },
+      "streamSettings": { "sockopt": { "tproxy": "tproxy" } },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    }
+EOF
+  fi
+
+  cat >> "$SCRIPT_DIR/config.json" <<EOF
   ],
   "outbounds": [
     {
@@ -348,6 +369,57 @@ generate_xray_config() {
 EOF
 }
 
+setup_tproxy() {
+  if [ "$IS_OPENWRT" -ne 1 ]; then return; fi
+  
+  echo "${GREEN}正在配置 OpenWrt 透明代理 (TProxy)...${PLAIN}"
+  
+  # 安装依赖 (TProxy 模块)
+  if ! opkg list-installed | grep -q kmod-ipt-tproxy; then
+    echo "安装 TProxy 依赖..."
+    opkg update
+    opkg install iptables-mod-tproxy kmod-ipt-tproxy ip-full
+  fi
+
+  # 策略路由
+  ip rule add fwmark 1 table 100
+  ip route add local 0.0.0.0/0 dev lo table 100
+
+  # iptables 规则
+  iptables -t mangle -N XRAY
+  # 直连局域网和私有地址
+  iptables -t mangle -A XRAY -d 0.0.0.0/8 -j RETURN
+  iptables -t mangle -A XRAY -d 10.0.0.0/8 -j RETURN
+  iptables -t mangle -A XRAY -d 127.0.0.0/8 -j RETURN
+  iptables -t mangle -A XRAY -d 169.254.0.0/16 -j RETURN
+  iptables -t mangle -A XRAY -d 172.16.0.0/12 -j RETURN
+  iptables -t mangle -A XRAY -d 192.168.0.0/16 -j RETURN
+  iptables -t mangle -A XRAY -d 224.0.0.0/4 -j RETURN
+  iptables -t mangle -A XRAY -d 240.0.0.0/4 -j RETURN
+  
+  # 劫持流量到 12345
+  iptables -t mangle -A XRAY -p tcp -j TPROXY --on-port 12345 --tproxy-mark 1
+  iptables -t mangle -A XRAY -p udp -j TPROXY --on-port 12345 --tproxy-mark 1
+  
+  # 应用到 PREROUTING 链 (劫持局域网流量)
+  iptables -t mangle -A PREROUTING -j XRAY
+  
+  echo "${GREEN}透明代理已启动！所有连接 WiFi 的设备均可自动翻墙。${PLAIN}"
+}
+
+cleanup_tproxy() {
+  if [ "$IS_OPENWRT" -ne 1 ]; then return; fi
+  
+  echo ""
+  echo "${YELLOW}正在清理透明代理规则...${PLAIN}"
+  iptables -t mangle -D PREROUTING -j XRAY 2>/dev/null
+  iptables -t mangle -F XRAY 2>/dev/null
+  iptables -t mangle -X XRAY 2>/dev/null
+  ip rule del fwmark 1 table 100 2>/dev/null
+  ip route del local 0.0.0.0/0 dev lo table 100 2>/dev/null
+  echo "${GREEN}规则已清理。${PLAIN}"
+}
+
 start_vless_client() {
   [ -f "$SCRIPT_DIR/xray" ] || install_xray_client || return 1
   XRAY_BIN="$SCRIPT_DIR/xray"
@@ -356,7 +428,6 @@ start_vless_client() {
   echo "${BLUE}--- 节点管理 ---${PLAIN}"
   
   i=1
-  # 这里使用 sh 兼容的数组方式处理 (通过 eval)
   while read -r line; do
     [ -z "$line" ] && continue
     name=$(echo "$line" | cut -d'|' -f1)
@@ -385,10 +456,19 @@ start_vless_client() {
   if [ -z "$SELECTED_LINK" ]; then echo "${RED}无效选择${PLAIN}"; return 1; fi
 
   generate_xray_config "$SELECTED_LINK"
+  
   set_system_proxy
-  trap unset_system_proxy EXIT INT TERM
+  setup_tproxy
+  
+  # 退出时清理
+  trap 'unset_system_proxy; cleanup_tproxy' EXIT INT TERM
 
-  echo "${GREEN}VLESS 代理启动成功 (绕过大陆模式)...${PLAIN}"
+  if [ "$IS_OPENWRT" -eq 1 ]; then
+    echo "${GREEN}VLESS 透明代理已启动 (全屋翻墙模式)...${PLAIN}"
+  else
+    echo "${GREEN}VLESS 代理已启动 (系统代理模式)...${PLAIN}"
+  fi
+  
   "$XRAY_BIN" run -c "$SCRIPT_DIR/config.json"
 }
 
