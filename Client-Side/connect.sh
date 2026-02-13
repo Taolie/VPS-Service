@@ -517,13 +517,17 @@ start_vless_client() {
   # 强制检查资源文件 (防止 Xray 存在但 dat 缺失)
   if [ ! -f "$SCRIPT_DIR/geoip.dat" ] || [ ! -f "$SCRIPT_DIR/geosite.dat" ]; then
     echo "${YELLOW}正在补全缺失的资源文件 (geoip/geosite)...${PLAIN}"
+    # 使用 Loyalsoldier 规则集 (更全更稳定)
+    GEOIP_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
+    GEOSITE_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
+    
     # 尝试使用 curl 下载
     if command -v curl >/dev/null 2>&1; then
-      [ ! -f "$SCRIPT_DIR/geoip.dat" ] && curl -L -o "$SCRIPT_DIR/geoip.dat" "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat"
-      [ ! -f "$SCRIPT_DIR/geosite.dat" ] && curl -L -o "$SCRIPT_DIR/geosite.dat" "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
+      [ ! -f "$SCRIPT_DIR/geoip.dat" ] && curl -L -o "$SCRIPT_DIR/geoip.dat" "$GEOIP_URL"
+      [ ! -f "$SCRIPT_DIR/geosite.dat" ] && curl -L -o "$SCRIPT_DIR/geosite.dat" "$GEOSITE_URL"
     elif command -v wget >/dev/null 2>&1; then
-      [ ! -f "$SCRIPT_DIR/geoip.dat" ] && wget -O "$SCRIPT_DIR/geoip.dat" "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat"
-      [ ! -f "$SCRIPT_DIR/geosite.dat" ] && wget -O "$SCRIPT_DIR/geosite.dat" "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
+      [ ! -f "$SCRIPT_DIR/geoip.dat" ] && wget -O "$SCRIPT_DIR/geoip.dat" "$GEOIP_URL"
+      [ ! -f "$SCRIPT_DIR/geosite.dat" ] && wget -O "$SCRIPT_DIR/geosite.dat" "$GEOSITE_URL"
     else
       echo "${RED}错误: 缺少 curl 或 wget，无法下载资源文件。${PLAIN}"
       return 1
