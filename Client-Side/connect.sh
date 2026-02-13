@@ -174,6 +174,196 @@ start_ss_client() {
     -v
 }
 
+# ------------------------------------------------------------------------------
+# VLESS-Reality 客户端逻辑
+# ------------------------------------------------------------------------------
+
+install_xray_client() {
+  echo "${GREEN}正在检测系统架构...${PLAIN}"
+  OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+  ARCH=$(uname -m)
+
+  case "$ARCH" in
+    x86_64) ARCH="64" ;;
+    aarch64|arm64) ARCH="arm64-v8a" ;;
+    mips*) ARCH="mips32" ;; 
+    *) echo "${RED}不支持的架构: $ARCH${PLAIN}"; return 1 ;;
+  esac
+
+  # OpenWrt 优先尝试 opkg
+  if [ "$IS_OPENWRT" -eq 1 ]; then
+    echo "${GREEN}OpenWrt 环境: 尝试使用 opkg 安装...${PLAIN}"
+    opkg update
+    if opkg install xray-core; then
+      return 0
+    fi
+    echo "${YELLOW}opkg 安装失败，尝试下载二进制...${PLAIN}"
+  fi
+
+  DOWNLOAD_URL="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-${OS}-${ARCH}.zip"
+  ZIP_FILE="$SCRIPT_DIR/xray.zip"
+  
+  echo "${GREEN}正在下载 Xray-core (${OS}-${ARCH})...${PLAIN}"
+  # 检查 curl 或 wget
+  if command -v curl >/dev/null 2>&1; then
+    curl -L -o "$ZIP_FILE" "$DOWNLOAD_URL"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$ZIP_FILE" "$DOWNLOAD_URL"
+  else
+    echo "${RED}错误: 未找到 curl 或 wget，无法下载。${PLAIN}"
+    return 1
+  fi
+
+  if [ -f "$ZIP_FILE" ]; then
+    # 检查 unzip
+    if ! command -v unzip >/dev/null 2>&1; then
+      echo "${RED}错误: 未找到 unzip 命令。${PLAIN}"
+      if [ "$IS_OPENWRT" -eq 1 ]; then echo "请运行: opkg install unzip"; fi
+      return 1
+    fi
+
+    unzip -o "$ZIP_FILE" -d "$SCRIPT_DIR" xray
+    chmod +x "$SCRIPT_DIR/xray"
+    rm "$ZIP_FILE"
+    echo "${GREEN}安装成功！${PLAIN}"
+  else
+    echo "${RED}下载失败。${PLAIN}"
+    return 1
+  fi
+}
+
+generate_xray_config() {
+  LINK="$1"
+  # 简单的 Shell 解析 (提取关键参数)
+  # 格式: vless://UUID@IP:PORT?params#NAME
+  
+  # 去除 vless:// 前缀
+  TEMP="${LINK#*://}"
+  # 提取 UUID (截取到第一个 @)
+  UUID="${TEMP%%@*}"
+  TEMP="${TEMP#*@}"
+  # 提取 IP:PORT (截取到第一个 ?)
+  ADDRESS="${TEMP%%\?*}"
+  IP="${ADDRESS%%:*}"
+  PORT="${ADDRESS#*:}"
+  # 提取参数部分 (截取第一个 ? 之后)
+  QUERY="${TEMP#*\?}"
+  # 去除可能存在的 #备注
+  QUERY="${QUERY%%\#*}"
+
+  # 提取参数值辅助函数 (grep -o + cut)
+  # 注意: OpenWrt 默认 grep 可能不支持 -o，这里使用 awk
+  get_param() {
+    echo "$QUERY" | awk -F"[=&]" '{for(i=1;i<=NF;i++){if($i=="'"$1"'") print $(i+1)}}'
+  }
+
+  SNI=$(get_param "sni")
+  PBK=$(get_param "pbk")
+  SID=$(get_param "sid")
+  FP=$(get_param "fp")
+  TYPE=$(get_param "type")
+  FLOW=$(get_param "flow")
+
+  # 生成 config.json
+  cat > "$SCRIPT_DIR/config.json" <<EOF
+{
+  "log": { "loglevel": "warning" },
+  "inbounds": [
+    {
+      "port": $LOCAL_PORT,
+      "listen": "$BIND_ADDR",
+      "protocol": "socks",
+      "settings": { "udp": true }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "$IP",
+            "port": $PORT,
+            "users": [
+              {
+                "id": "$UUID",
+                "flow": "$FLOW",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "$TYPE",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "$SNI",
+          "publicKey": "$PBK",
+          "fingerprint": "$FP",
+          "shortId": "$SID",
+          "spiderX": ""
+        }
+      }
+    }
+  ]
+}
+EOF
+}
+
+start_vless_client() {
+  # 1. 确定 Xray 路径
+  XRAY_BIN="./xray"
+  if [ -f "$SCRIPT_DIR/xray" ]; then
+    XRAY_BIN="$SCRIPT_DIR/xray"
+  elif command -v xray >/dev/null 2>&1; then
+    XRAY_BIN="xray"
+  else
+    echo "${YELLOW}未检测到 Xray 核心。${PLAIN}"
+    printf "是否自动下载安装? [y/N] "
+    read -r install_choice
+    case "$install_choice" in
+      [yY]*)
+        install_xray_client
+        if [ -f "$SCRIPT_DIR/xray" ]; then
+          XRAY_BIN="$SCRIPT_DIR/xray"
+        else
+          return 1
+        fi
+        ;;
+      *)
+        echo "${YELLOW}已取消。${PLAIN}"
+        return 1
+        ;;
+    esac
+  fi
+
+  # 2. 获取链接
+  VLESS_LINK="$VLESS_URI"
+  if [ -z "$VLESS_LINK" ]; then
+    echo "${YELLOW}请输入 VLESS 链接 (vless://...):${PLAIN}"
+    echo "(提示: 您可以将链接填入 config.ini 的 VLESS_URI 字段以自动读取)"
+    read -r VLESS_LINK
+  fi
+
+  if [ -z "$VLESS_LINK" ]; then
+    echo "${RED}错误: 链接不能为空。${PLAIN}"
+    return 1
+  fi
+
+  # 3. 生成配置
+  echo "${GREEN}正在生成配置文件...${PLAIN}"
+  generate_xray_config "$VLESS_LINK"
+
+  # 4. 启动
+  echo "${GREEN}正在启动 Xray 客户端...${PLAIN}"
+  echo "服务器: ${YELLOW}$IP:$PORT${PLAIN}"
+  echo "本地监听: ${YELLOW}$BIND_ADDR:$LOCAL_PORT${PLAIN}"
+  echo "正在运行... (按 Ctrl+C 停止)"
+  
+  "$XRAY_BIN" run -c "$SCRIPT_DIR/config.json"
+}
+
 # ==============================================================================
 # 主菜单
 # ==============================================================================
@@ -191,7 +381,7 @@ echo "  本地端口: ${YELLOW}$LOCAL_PORT${PLAIN}"
 echo "==================================================="
 echo "1. ${GREEN}启动 SSH 隧道模式${PLAIN} (免安装)"
 echo "2. ${YELLOW}启动 Shadowsocks 模式${PLAIN} (更稳定)"
-echo "3. ${YELLOW}VLESS-Reality 模式${PLAIN} (推荐/更隐蔽)"
+echo "3. ${YELLOW}启动 VLESS-Reality 模式${PLAIN} (自动下载 Xray)"
 echo "0. 退出"
 echo "==================================================="
 
@@ -206,8 +396,7 @@ case "$choice" in
   start_ss_client
   ;;
 3)
-  echo "${GREEN}VLESS-Reality 模式需要使用专用客户端 (如 v2rayN, v2rayNG)。${PLAIN}"
-  echo "请查看项目主页 ${YELLOW}README.md${PLAIN} 获取下载地址和配置方法。"
+  start_vless_client
   ;;
 0)
   exit 0
