@@ -191,11 +191,13 @@ start_ss_client() {
 }
 
 # ------------------------------------------------------------------------------
-# VLESS-Reality 客户端逻辑 (增强版: 多节点 + 分流 + 自动代理 + TProxy)
+# VLESS-Reality 客户端逻辑 (增强版: 多节点 + 分流 + 自动代理 + TProxy + 后台)
 # ------------------------------------------------------------------------------
 
 # 存储节点的文件
 NODES_FILE="$SCRIPT_DIR/nodes.dat"
+PID_FILE="$SCRIPT_DIR/xray.pid"
+LOG_FILE="$SCRIPT_DIR/xray.log"
 
 # 设置系统代理 (macOS / Linux Gnome/KDE)
 set_system_proxy() {
@@ -382,11 +384,18 @@ setup_tproxy() {
   fi
 
   # 策略路由
-  ip rule add fwmark 1 table 100
-  ip route add local 0.0.0.0/0 dev lo table 100
+  if ! ip rule show | grep -q "fwmark 0x1 lookup 100"; then
+    ip rule add fwmark 1 table 100
+  fi
+  if ! ip route show table 100 | grep -q "local default dev lo"; then
+    ip route add local 0.0.0.0/0 dev lo table 100
+  fi
 
-  # iptables 规则
+  # iptables 规则 (避免重复添加)
+  iptables -t mangle -F XRAY 2>/dev/null
+  iptables -t mangle -X XRAY 2>/dev/null
   iptables -t mangle -N XRAY
+  
   # 直连局域网和私有地址
   iptables -t mangle -A XRAY -d 0.0.0.0/8 -j RETURN
   iptables -t mangle -A XRAY -d 10.0.0.0/8 -j RETURN
@@ -401,8 +410,10 @@ setup_tproxy() {
   iptables -t mangle -A XRAY -p tcp -j TPROXY --on-port 12345 --tproxy-mark 1
   iptables -t mangle -A XRAY -p udp -j TPROXY --on-port 12345 --tproxy-mark 1
   
-  # 应用到 PREROUTING 链 (劫持局域网流量)
-  iptables -t mangle -A PREROUTING -j XRAY
+  # 应用到 PREROUTING 链
+  if ! iptables -t mangle -C PREROUTING -j XRAY 2>/dev/null; then
+    iptables -t mangle -A PREROUTING -j XRAY
+  fi
   
   echo "${GREEN}透明代理已启动！所有连接 WiFi 的设备均可自动翻墙。${PLAIN}"
 }
@@ -420,9 +431,37 @@ cleanup_tproxy() {
   echo "${GREEN}规则已清理。${PLAIN}"
 }
 
+stop_service() {
+  echo "${YELLOW}正在停止服务...${PLAIN}"
+  if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE")
+    if kill -0 "$PID" 2>/dev/null; then
+      kill "$PID"
+      echo "已停止 Xray 进程 (PID: $PID)"
+    fi
+    rm "$PID_FILE"
+  else
+    pkill -f "xray run -c" 2>/dev/null
+  fi
+  
+  unset_system_proxy
+  cleanup_tproxy
+  echo "${GREEN}服务已完全停止，网络已恢复。${PLAIN}"
+}
+
 start_vless_client() {
   [ -f "$SCRIPT_DIR/xray" ] || install_xray_client || return 1
   XRAY_BIN="$SCRIPT_DIR/xray"
+
+  if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE")
+    if kill -0 "$PID" 2>/dev/null; then
+      echo "${RED}检测到 Xray 已在运行 (PID: $PID)。请先停止服务。${PLAIN}"
+      return 1
+    else
+      rm "$PID_FILE"
+    fi
+  fi
 
   touch "$NODES_FILE"
   echo "${BLUE}--- 节点管理 ---${PLAIN}"
@@ -457,19 +496,30 @@ start_vless_client() {
 
   generate_xray_config "$SELECTED_LINK"
   
+  printf "是否在后台运行 (推荐 OpenWrt 使用)? [y/N] "
+  read -r bg_choice
+
   set_system_proxy
   setup_tproxy
   
-  # 退出时清理
-  trap 'unset_system_proxy; cleanup_tproxy' EXIT INT TERM
-
-  if [ "$IS_OPENWRT" -eq 1 ]; then
-    echo "${GREEN}VLESS 透明代理已启动 (全屋翻墙模式)...${PLAIN}"
+  if [ "$bg_choice" = "y" ] || [ "$bg_choice" = "Y" ]; then
+    echo "${GREEN}正在后台启动 Xray...${PLAIN}"
+    nohup "$XRAY_BIN" run -c "$SCRIPT_DIR/config.json" > "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    echo "${GREEN}服务已在后台运行 (PID: $(cat "$PID_FILE"))。${PLAIN}"
+    echo "日志文件: $LOG_FILE"
+    echo "您可以关闭终端了。如需停止，请重新运行脚本并选择 '4'。"
   else
-    echo "${GREEN}VLESS 代理已启动 (系统代理模式)...${PLAIN}"
+    trap 'unset_system_proxy; cleanup_tproxy' EXIT INT TERM
+
+    if [ "$IS_OPENWRT" -eq 1 ]; then
+      echo "${GREEN}VLESS 透明代理已启动 (全屋翻墙模式)...${PLAIN}"
+    else
+      echo "${GREEN}VLESS 代理已启动 (系统代理模式)...${PLAIN}"
+    fi
+    
+    "$XRAY_BIN" run -c "$SCRIPT_DIR/config.json"
   fi
-  
-  "$XRAY_BIN" run -c "$SCRIPT_DIR/config.json"
 }
 
 # ==============================================================================
@@ -490,10 +540,11 @@ echo "==================================================="
 echo "1. ${GREEN}启动 SSH 隧道模式${PLAIN} (免安装)"
 echo "2. ${YELLOW}启动 Shadowsocks 模式${PLAIN} (更稳定)"
 echo "3. ${YELLOW}启动 VLESS-Reality 模式${PLAIN} (自动下载 Xray)"
+echo "4. ${RED}停止服务 & 清理规则${PLAIN}"
 echo "0. 退出"
 echo "==================================================="
 
-printf "请输入选项 [1-3]: "
+printf "请输入选项 [0-4]: "
 read -r choice
 
 case "$choice" in
@@ -505,6 +556,9 @@ case "$choice" in
   ;;
 3)
   start_vless_client
+  ;;
+4)
+  stop_service
   ;;
 0)
   exit 0
