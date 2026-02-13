@@ -68,3 +68,18 @@ VPS-Service/
 2. **连接不上怎么办?**
    * **90% 的原因是防火墙没开。** 务必去云厂商控制台（阿里云/腾讯云/AWS等）的**安全组**设置中，放行脚本输出的端口（TCP）。
    * **检查时间**: VLESS 协议对时间非常敏感，请确保客户端和服务器的时间误差在 90秒以内。
+
+3. **为什么 Chrome 能上网，但终端 (Terminal) 却不行？**
+   * **机制不同**: Chrome、Shadowrocket 等 GUI 软件会自动读取 macOS 的系统代理设置。
+   * **终端**: 默认**不读取**系统设置，必须手动设置环境变量 (`http_proxy`, `https_proxy`, `all_proxy`)。
+   * **解决方法**: 在终端执行 `export all_proxy=socks5://127.0.0.1:1080` (针对本脚本) 或 `export all_proxy=http://127.0.0.1:1082` (针对 Shadowrocket)。
+
+4. **CLI 工具报错 `fetch failed` 或 `socket hang up`？**
+   * **原因**: 协议头写错了！
+   * **Shadowrocket (1082)**: 通常是 HTTP 协议，变量应设为 `export all_proxy=http://127.0.0.1:1082`。
+   * **本脚本 (1080)**: 是纯 **SOCKS5** 协议，必须写成 `socks5://`。
+   * **正确写法 (脚本模式)**:
+     ```bash
+     export all_proxy=socks5://127.0.0.1:1080
+     # 注意是 socks5 (复数) 不是 socket5
+     ```
