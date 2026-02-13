@@ -263,6 +263,167 @@ unset_system_proxy() {
   fi
 }
 
+# ------------------------------------------------------------------------------
+# 节点管理与测速模块
+# ------------------------------------------------------------------------------
+
+# 单个节点测速 (TCP握手时间)
+# 参数: $1=节点链接, $2=节点名称
+test_node_latency() {
+  LINK="$1"
+  NAME="$2"
+  
+  # 解析 IP 和 端口
+  TEMP="${LINK#*://}"
+  TEMP="${TEMP#*@}"
+  ADDRESS="${TEMP%%\?*}"
+  IP="${ADDRESS%%:*}"
+  PORT="${ADDRESS#*:}"
+  
+  # 优先使用 curl 测试 TCP 连接时间 (单位: 秒)
+  # -w %{time_connect}: TCP 握手建立的时间
+  LATENCY=$(curl -o /dev/null -s -w '%{time_connect}' --connect-timeout 2 "http://$IP:$PORT" 2>/dev/null)
+  
+  if [ -n "$LATENCY" ] && [ "$LATENCY" != "0.000000" ]; then
+    # 转换为毫秒并取整
+    MS=$(echo "$LATENCY * 1000 / 1" | bc 2>/dev/null || awk "{print int($LATENCY * 1000)}")
+    if [ "$MS" -lt 100 ]; then
+      COLOR=$GREEN
+    elif [ "$MS" -lt 300 ]; then
+      COLOR=$YELLOW
+    else
+      COLOR=$RED
+    fi
+    echo "${COLOR}${MS}ms${PLAIN}|$LINK|$NAME"
+  else
+    echo "${RED}超时${PLAIN}|99999|$LINK|$NAME"
+  fi
+}
+
+# 管理节点主菜单
+manage_nodes() {
+  while true; do
+    clear
+    echo "==================================================="
+    echo "${BLUE}节点管理与测速${PLAIN}"
+    echo "==================================================="
+    
+    if [ ! -f "$NODES_FILE" ] || [ ! -s "$NODES_FILE" ]; then
+      echo "${YELLOW}当前没有保存的节点。${PLAIN}"
+      echo "请先在 '启动 VLESS' 模式中添加节点。"
+      printf "按回车返回..." && read -r _
+      return
+    fi
+
+    # 读取并显示节点列表 (但不测速，仅显示)
+    i=1
+    while read -r line; do
+      [ -z "$line" ] && continue
+      name=$(echo "$line" | cut -d'|' -f1)
+      echo "$i. $name"
+      i=$((i+1))
+    done < "$NODES_FILE"
+    
+    echo "==================================================="
+    echo "t. ${GREEN}全部测速${PLAIN} (并发)"
+    echo "s. ${YELLOW}按速度排序${PLAIN} (自动将快节点置顶)"
+    echo "d. ${RED}删除节点${PLAIN}"
+    echo "0. 返回主菜单"
+    echo "==================================================="
+    
+    printf "请选择: "
+    read -r choice
+    
+    case "$choice" in
+      t)
+        echo ""
+        echo "${GREEN}正在测速中 (并发模式)...${PLAIN}"
+        echo "请稍候..."
+        
+        TMP_RESULT="$SCRIPT_DIR/latency.tmp"
+        : > "$TMP_RESULT"
+        
+        # 并发测速
+        while read -r line; do
+          [ -z "$line" ] && continue
+          name=$(echo "$line" | cut -d'|' -f1)
+          link=$(echo "$line" | cut -d'|' -f2)
+          (
+            test_node_latency "$link" "$name" >> "$TMP_RESULT"
+          ) &
+        done < "$NODES_FILE"
+        
+        wait
+        
+        # 显示结果
+        clear
+        echo "==================================================="
+        echo "${BLUE}测速结果${PLAIN}"
+        echo "==================================================="
+        sort -n "$TMP_RESULT" | while IFS='|' read -r latency _ link name; do
+          if [ "$latency" = "超时" ]; then
+             printf "%-10s %s\n" "${RED}[超时]${PLAIN}" "$name"
+          else
+             # 去除颜色代码再比较，或者直接显示
+             printf "%-10s %s\n" "[$latency]" "$name"
+          fi
+        done
+        rm "$TMP_RESULT"
+        echo "==================================================="
+        printf "按回车继续..." && read -r _
+        ;;
+        
+      s)
+        echo "${GREEN}正在测速并重新排序...${PLAIN}"
+        TMP_SORT="$SCRIPT_DIR/sort.tmp"
+        : > "$TMP_SORT"
+        
+        while read -r line; do
+          [ -z "$line" ] && continue
+          name=$(echo "$line" | cut -d'|' -f1)
+          link=$(echo "$line" | cut -d'|' -f2)
+          (
+            # 输出格式: 延迟毫秒|原始名称|原始链接
+            # 注意: 这里需要纯数字用于排序
+            latency=$(curl -o /dev/null -s -w '%{time_connect}' --connect-timeout 2 "http://$(echo "$link" | awk -F[@:] '{print $3}'):$(echo "$link" | awk -F: '{print $4}' | cut -d'?' -f1)" 2>/dev/null)
+            if [ -n "$latency" ] && [ "$latency" != "0.000000" ]; then
+              ms=$(echo "$latency * 1000 / 1" | bc 2>/dev/null || awk "{print int($latency * 1000)}")
+              echo "$ms|$name|$link" >> "$TMP_SORT"
+            else
+              echo "99999|$name|$link" >> "$TMP_SORT"
+            fi
+          ) &
+        done < "$NODES_FILE"
+        wait
+        
+        # 排序并写回 NODES_FILE
+        sort -n "$TMP_SORT" | awk -F'|' '{print $2"|"$3}' > "$NODES_FILE"
+        rm "$TMP_SORT"
+        echo "${GREEN}排序完成！最快的节点已置顶。${PLAIN}"
+        sleep 1
+        ;;
+        
+      d)
+        printf "请输入要删除的节点序号: "
+        read -r del_idx
+        if [ -n "$del_idx" ] && [ "$del_idx" -gt 0 ]; then
+           sed -i.bak "${del_idx}d" "$NODES_FILE" && rm "${NODES_FILE}.bak"
+           echo "${GREEN}删除成功。${PLAIN}"
+        else
+           echo "${RED}无效序号。${PLAIN}"
+        fi
+        sleep 1
+        ;;
+        
+      0)
+        return
+        ;;
+      *)
+        ;;
+    esac
+  done
+}
+
 install_xray_client() {
   echo "${GREEN}正在检测系统架构...${PLAIN}"
   OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -589,10 +750,11 @@ echo "1. ${GREEN}启动 SSH 隧道模式${PLAIN} (免安装)"
 echo "2. ${YELLOW}启动 Shadowsocks 模式${PLAIN} (更稳定)"
 echo "3. ${YELLOW}启动 VLESS-Reality 模式${PLAIN} (自动下载 Xray)"
 echo "4. ${RED}停止服务 & 清理规则${PLAIN}"
+echo "5. ${BLUE}节点管理 (测速/排序)${PLAIN}"
 echo "0. 退出"
 echo "==================================================="
 
-printf "请输入选项 [0-4]: "
+printf "请输入选项 [0-5]: "
 read -r choice
 
 case "$choice" in
@@ -607,6 +769,9 @@ case "$choice" in
   ;;
 4)
   stop_service
+  ;;
+5)
+  manage_nodes
   ;;
 0)
   exit 0
