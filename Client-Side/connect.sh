@@ -329,7 +329,17 @@ generate_xray_config() {
   "routing": {
     "domainStrategy": "IPOnDemand",
     "rules": [
-      { "type": "field", "ip": ["geoip:private", "geoip:cn"], "outboundTag": "direct" },
+      {
+        "type": "field",
+        "ip": [
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16",
+          "127.0.0.0/8",
+          "geoip:cn"
+        ],
+        "outboundTag": "direct"
+      },
       { "type": "field", "domain": ["geosite:cn"], "outboundTag": "direct" }
     ]
   },
