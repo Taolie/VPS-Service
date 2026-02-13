@@ -42,37 +42,21 @@ VPS-Service/
    chmod +x install_vless.sh
    ./install_vless.sh
    ```
-3. **结果**: 脚本输出 `vless://` 开头的分享链接。**无需域名，直接使用 IP 连接。**
+3. **设置**: 脚本会提示你输入服务端口（默认 443）。
+4. **结果**: 脚本输出 `vless://` 开头的分享链接。**无需域名，直接使用 IP 连接。**
 
 ---
 
 ## 第二步：客户端配置 (Client)
 
-### 如果你选择了 [方案 A: Shadowsocks]
+### 方案 A & B 统一配置
 
-* **macOS / Linux / OpenWrt**: 运行 `Client-Side/connect.sh`，选择 Shadowsocks 模式。
+* **macOS / Linux / OpenWrt**: 运行 `Client-Side/connect.sh`。
+  * 选择 **1** 启动 SSH 隧道。
+  * 选择 **2** 启动 Shadowsocks。
+  * 选择 **3** 启动 **VLESS-Reality** (脚本会自动为你配置 Xray 环境)。
 * **Windows**: 右键运行 `Client-Side/connect.ps1`。
 * **手机**: 参考 `Client-Side/Mobile_Guide.md`。
-
-### 如果你选择了 [方案 B: VLESS + Reality]
-
-此模式需要使用支持 Xray 内核的专用客户端。无法使用简单的 Shell 脚本连接。
-
-#### 1. Windows
-* **推荐软件**: [v2rayN](https://github.com/2dust/v2rayN/releases)
-* **配置**: 复制服务端生成的 `vless://...` 链接 -> 打开 v2rayN -> `Ctrl+V` (从剪贴板导入) -> 设为活动服务器。
-
-#### 2. macOS
-* **推荐软件**: [V2RayXS](https://github.com/bnd1/V2RayXS) 或 [FoXray](https://github.com/ItzLevvie/FoXray)
-* **配置**: 复制 `vless://...` 链接 -> 导入到软件中 -> 启动。
-
-#### 3. Android
-* **推荐软件**: [v2rayNG](https://github.com/2dust/v2rayNG/releases)
-* **配置**: 复制 `vless://...` 链接 -> 打开 App -> 点击右上角 `+` -> 从剪贴板导入。
-
-#### 4. iOS
-* **推荐软件**: Shadowrocket (需非国区 Apple ID 购买) 或 Stash。
-* **配置**: 复制 `vless://...` 链接 -> 打开 App -> 自动识别并添加。
 
 ---
 
@@ -84,6 +68,3 @@ VPS-Service/
 2. **连接不上怎么办?**
    * **90% 的原因是防火墙没开。** 务必去云厂商控制台（阿里云/腾讯云/AWS等）的**安全组**设置中，放行脚本输出的端口（TCP）。
    * **检查时间**: VLESS 协议对时间非常敏感，请确保客户端和服务器的时间误差在 90秒以内。
-
-3. **为什么 connect.sh 不能直接连 VLESS?**
-   * VLESS-Reality 需要 Xray 完整核心，体积较大且配置复杂，不适合集成在轻量级的 Shell 脚本中。使用 GUI 客户端体验更好。

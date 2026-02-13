@@ -8,6 +8,11 @@
 ## [Unreleased]
 
 ### Added
+- **VLESS 客户端支持**: `connect.sh` 现在集成了 VLESS-Reality 模式，支持自动下载 Xray 核心、解析链接并启动代理。
+- **自定义端口**: `install_vless.sh` 增加交互式端口设置，支持避开 443 端口冲突。
+
+### Changed
+- **UI 颜色增强**: `connect.sh` 颜色定义改用 `tput`，显著提升 macOS 终端兼容性。
 - **统一连接入口**: 为 macOS/Linux 和 Windows 创建了 `connect.sh` 和 `connect.ps1`。
 - **智能依赖安装**: `connect.sh` 现在可以自动检测并使用包管理器安装 `shadowsocks-libev`。
 - **配置同步**: 客户端脚本现在自动读取根目录的 `config.ini`，无需重复填写。
