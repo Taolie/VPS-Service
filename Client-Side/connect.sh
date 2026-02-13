@@ -286,6 +286,16 @@ install_xray_client() {
     unzip -o "$ZIP_FILE" -d "$SCRIPT_DIR"
     chmod +x "$SCRIPT_DIR/xray"
     rm "$ZIP_FILE"
+    
+    # 检查资源文件
+    if [ ! -f "$SCRIPT_DIR/geoip.dat" ] || [ ! -f "$SCRIPT_DIR/geosite.dat" ]; then
+      echo "${YELLOW}资源文件缺失，正在单独下载 geoip.dat 和 geosite.dat...${PLAIN}"
+      curl -L -o "$SCRIPT_DIR/geoip.dat" "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat"
+      curl -L -o "$SCRIPT_DIR/geosite.dat" "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
+      # dlc.dat 重命名为 geosite.dat (v2fly 标准)
+      mv "$SCRIPT_DIR/dlc.dat" "$SCRIPT_DIR/geosite.dat" 2>/dev/null
+    fi
+    
     echo "${GREEN}安装成功！${PLAIN}"
   else
     echo "${RED}下载失败。${PLAIN}"
