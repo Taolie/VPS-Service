@@ -76,7 +76,7 @@ ensure_config() {
   # 使用 eval 获取变量值
   eval "CURRENT_VAL=\${$VAR_NAME}"
   
-  # 如果变量为空或为默认值，则提示输入
+  # 如果变量为空 or 为默认值，则提示输入
   if [ -z "$CURRENT_VAL" ] || [ "$CURRENT_VAL" = "YOUR_VPS_IP" ] || [ "$CURRENT_VAL" = "YOUR_PASSWORD" ]; then
     echo "${YELLOW}$PROMPT_TEXT${PLAIN}"
     read -r INPUT_VAL
@@ -159,12 +159,9 @@ start_ssh_tunnel() {
   # -g: 允许远程主机连接本地转发端口 (如果需要在路由器上开放 SSH 隧道)
   SSH_OPTS="-C -N -D $BIND_ADDR:$LOCAL_PORT"
   if [ "$IS_OPENWRT" -eq 1 ]; then
-    # OpenWrt 的 ssh 客户端 (dropbear/openssh) 可能参数略有不同，但通常兼容
-    # 如果是 Dropbear ssh，可能不支持 -C (压缩)，视版本而定
     SSH_OPTS="-N -D $BIND_ADDR:$LOCAL_PORT"
   fi
 
-  # SC2029: 忽略此警告，我们确实需要在本地展开变量
   # shellcheck disable=SC2029
   ssh "$SSH_OPTS" "$VPS_USER@$VPS_HOST"
 }
@@ -183,10 +180,6 @@ start_ss_client() {
   echo "本地监听: ${YELLOW}$BIND_ADDR:$LOCAL_PORT${PLAIN}"
   echo "加密方式: ${YELLOW}$SS_METHOD${PLAIN}"
 
-  # ss-local 命令
-  # 注意: OpenWrt 上的 ss-local 可能没有 -v 详细模式，或者参数行为略有不同
-  # 但核心参数 -s -p -k -m -l -b 是一致的
-
   ss-local -s "$VPS_HOST" \
     -p "$SS_PORT" \
     -k "$SS_PASSWORD" \
@@ -198,17 +191,45 @@ start_ss_client() {
 }
 
 # ------------------------------------------------------------------------------
-# VLESS-Reality 客户端逻辑
+# VLESS-Reality 客户端逻辑 (增强版: 多节点 + 分流 + 自动代理)
 # ------------------------------------------------------------------------------
+
+# 存储节点的文件
+NODES_FILE="$SCRIPT_DIR/nodes.dat"
+
+# 设置 macOS 系统代理
+set_macos_proxy() {
+  if [ "$(uname)" = "Darwin" ]; then
+    INTERFACE=$(route -n get default 2>/dev/null | grep interface | awk '{print $2}')
+    if [ -n "$INTERFACE" ]; then
+      SERVICE=$(networksetup -listnetworkserviceorder | grep -B1 "$INTERFACE" | head -n1 | cut -d' ' -f2-)
+      if [ -n "$SERVICE" ]; then
+        echo "${GREEN}检测到活动网卡: $SERVICE，正在开启系统代理...${PLAIN}"
+        networksetup -setsocksfirewallproxy "$SERVICE" 127.0.0.1 "$LOCAL_PORT"
+      fi
+    fi
+  fi
+}
+
+# 清除 macOS 系统代理
+unset_macos_proxy() {
+  if [ "$(uname)" = "Darwin" ]; then
+    INTERFACE=$(route -n get default 2>/dev/null | grep interface | awk '{print $2}')
+    if [ -n "$INTERFACE" ]; then
+      SERVICE=$(networksetup -listnetworkserviceorder | grep -B1 "$INTERFACE" | head -n1 | cut -d' ' -f2-)
+      if [ -n "$SERVICE" ]; then
+        echo ""
+        echo "${YELLOW}正在关闭系统代理...${PLAIN}"
+        networksetup -setsocksfirewallproxystate "$SERVICE" off
+      fi
+    fi
+  fi
+}
 
 install_xray_client() {
   echo "${GREEN}正在检测系统架构...${PLAIN}"
   OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-  # Xray 发布文件名使用 'macos' 而不是 'darwin'
-  if [ "$OS" = "darwin" ]; then
-    OS="macos"
-  fi
-  
+  if [ "$OS" = "darwin" ]; then OS="macos"; fi
   ARCH=$(uname -m)
 
   case "$ARCH" in
@@ -218,39 +239,22 @@ install_xray_client() {
     *) echo "${RED}不支持的架构: $ARCH${PLAIN}"; return 1 ;;
   esac
 
-  # OpenWrt 优先尝试 opkg
   if [ "$IS_OPENWRT" -eq 1 ]; then
     echo "${GREEN}OpenWrt 环境: 尝试使用 opkg 安装...${PLAIN}"
     opkg update
-    if opkg install xray-core; then
-      return 0
-    fi
-    echo "${YELLOW}opkg 安装失败，尝试下载二进制...${PLAIN}"
+    if opkg install xray-core; then return 0; fi
   fi
 
   DOWNLOAD_URL="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-${OS}-${ARCH}.zip"
   ZIP_FILE="$SCRIPT_DIR/xray.zip"
   
   echo "${GREEN}正在下载 Xray-core (${OS}-${ARCH})...${PLAIN}"
-  # 检查 curl 或 wget
-  if command -v curl >/dev/null 2>&1; then
-    curl -L -o "$ZIP_FILE" "$DOWNLOAD_URL"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -O "$ZIP_FILE" "$DOWNLOAD_URL"
-  else
-    echo "${RED}错误: 未找到 curl 或 wget，无法下载。${PLAIN}"
-    return 1
+  if command -v curl >/dev/null 2>&1; then curl -L -o "$ZIP_FILE" "$DOWNLOAD_URL"
+  elif command -v wget >/dev/null 2>&1; then wget -O "$ZIP_FILE" "$DOWNLOAD_URL"
   fi
 
   if [ -f "$ZIP_FILE" ]; then
-    # 检查 unzip
-    if ! command -v unzip >/dev/null 2>&1; then
-      echo "${RED}错误: 未找到 unzip 命令。${PLAIN}"
-      if [ "$IS_OPENWRT" -eq 1 ]; then echo "请运行: opkg install unzip"; fi
-      return 1
-    fi
-
-    unzip -o "$ZIP_FILE" -d "$SCRIPT_DIR" xray
+    unzip -o "$ZIP_FILE" -d "$SCRIPT_DIR"
     chmod +x "$SCRIPT_DIR/xray"
     rm "$ZIP_FILE"
     echo "${GREEN}安装成功！${PLAIN}"
@@ -262,28 +266,16 @@ install_xray_client() {
 
 generate_xray_config() {
   LINK="$1"
-  # 简单的 Shell 解析 (提取关键参数)
-  # 格式: vless://UUID@IP:PORT?params#NAME
-  
-  # 去除 vless:// 前缀
   TEMP="${LINK#*://}"
-  # 提取 UUID (截取到第一个 @)
   UUID="${TEMP%%@*}"
   TEMP="${TEMP#*@}"
-  # 提取 IP:PORT (截取到第一个 ?)
   ADDRESS="${TEMP%%\?*}"
   IP="${ADDRESS%%:*}"
   PORT="${ADDRESS#*:}"
-  # 提取参数部分 (截取第一个 ? 之后)
   QUERY="${TEMP#*\?}"
-  # 去除可能存在的 #备注
   QUERY="${QUERY%%\#*}"
 
-  # 提取参数值辅助函数 (grep -o + cut)
-  # 注意: OpenWrt 默认 grep 可能不支持 -o，这里使用 awk
-  get_param() {
-    echo "$QUERY" | awk -F"[=&]" '{for(i=1;i<=NF;i++){if($i=="'"$1"'") print $(i+1)}}'
-  }
+  get_param() { echo "$QUERY" | awk -F"[=&]" '{for(i=1;i<=NF;i++){if($i=="'"$1"'") print $(i+1)}}'; }
 
   SNI=$(get_param "sni")
   PBK=$(get_param "pbk")
@@ -292,10 +284,16 @@ generate_xray_config() {
   TYPE=$(get_param "type")
   FLOW=$(get_param "flow")
 
-  # 生成 config.json
   cat > "$SCRIPT_DIR/config.json" <<EOF
 {
-  "log": { "loglevel": "info", "access": "/dev/stdout", "error": "/dev/stderr" },
+  "log": { "loglevel": "info" },
+  "routing": {
+    "domainStrategy": "IPOnDemand",
+    "rules": [
+      { "type": "field", "ip": ["geoip:private", "geoip:cn"], "outboundTag": "direct" },
+      { "type": "field", "domain": ["geosite:cn"], "outboundTag": "direct" }
+    ]
+  },
   "inbounds": [
     {
       "port": $LOCAL_PORT,
@@ -306,103 +304,68 @@ generate_xray_config() {
   ],
   "outbounds": [
     {
+      "tag": "proxy",
       "protocol": "vless",
       "settings": {
-        "vnext": [
-          {
-            "address": "$IP",
-            "port": $PORT,
-            "users": [
-              {
-                "id": "$UUID",
-                "flow": "$FLOW",
-                "encryption": "none"
-              }
-            ]
-          }
-        ]
+        "vnext": [{
+          "address": "$IP", "port": $PORT,
+          "users": [{"id": "$UUID", "flow": "$FLOW", "encryption": "none"}]
+        }]
       },
       "streamSettings": {
-        "network": "$TYPE",
-        "security": "reality",
+        "network": "$TYPE", "security": "reality",
         "realitySettings": {
-          "serverName": "$SNI",
-          "publicKey": "$PBK",
-          "fingerprint": "$FP",
-          "shortId": "$SID",
-          "spiderX": ""
+          "serverName": "$SNI", "publicKey": "$PBK", "fingerprint": "$FP", "shortId": "$SID"
         }
       }
-    }
+    },
+    { "tag": "direct", "protocol": "freedom", "settings": {} }
   ]
 }
 EOF
 }
 
 start_vless_client() {
-  # 1. 确定 Xray 路径
-  XRAY_BIN="./xray"
-  if [ -f "$SCRIPT_DIR/xray" ]; then
-    XRAY_BIN="$SCRIPT_DIR/xray"
-  elif command -v xray >/dev/null 2>&1; then
-    XRAY_BIN="xray"
-  else
-    echo "${YELLOW}未检测到 Xray 核心。${PLAIN}"
-    printf "是否自动下载安装? [y/N] "
-    read -r install_choice
-    case "$install_choice" in
-      [yY]*)
-        install_xray_client
-        if [ -f "$SCRIPT_DIR/xray" ]; then
-          XRAY_BIN="$SCRIPT_DIR/xray"
-        else
-          return 1
-        fi
-        ;;
-      *)
-        echo "${YELLOW}已取消。${PLAIN}"
-        return 1
-        ;;
-    esac
-  fi
+  [ -f "$SCRIPT_DIR/xray" ] || install_xray_client || return 1
+  XRAY_BIN="$SCRIPT_DIR/xray"
 
-  # 2. 获取链接
-  VLESS_LINK="$VLESS_URI"
-  if [ -z "$VLESS_LINK" ]; then
-    echo "${YELLOW}请输入 VLESS 链接 (vless://...):${PLAIN}"
-    echo "(提示: 您可以将链接填入 config.ini 的 VLESS_URI 字段以自动读取)"
-    read -r VLESS_LINK
-    
-    # 保存链接到 config.ini
-    if [ -n "$VLESS_LINK" ]; then
-      if grep -q "^VLESS_URI=" "$CONFIG_FILE"; then
-        # 如果存在，替换
-        # 使用 temp 文件兼容 macOS/Linux sed 差异
-        sed "s|^VLESS_URI=.*|VLESS_URI=$VLESS_LINK|" "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
-      else
-        # 如果不存在，追加
-        echo "" >> "$CONFIG_FILE"
-        echo "VLESS_URI=$VLESS_LINK" >> "$CONFIG_FILE"
-      fi
-      echo "${GREEN}链接已保存到 config.ini${PLAIN}"
-    fi
-  fi
-
-  if [ -z "$VLESS_LINK" ]; then
-    echo "${RED}错误: 链接不能为空。${PLAIN}"
-    return 1
-  fi
-
-  # 3. 生成配置
-  echo "${GREEN}正在生成配置文件...${PLAIN}"
-  generate_xray_config "$VLESS_LINK"
-
-  # 4. 启动
-  echo "${GREEN}正在启动 Xray 客户端...${PLAIN}"
-  echo "服务器: ${YELLOW}$IP:$PORT${PLAIN}"
-  echo "本地监听: ${YELLOW}$BIND_ADDR:$LOCAL_PORT${PLAIN}"
-  echo "正在运行... (按 Ctrl+C 停止)"
+  touch "$NODES_FILE"
+  echo "${BLUE}--- 节点管理 ---${PLAIN}"
   
+  i=1
+  # 这里使用 sh 兼容的数组方式处理 (通过 eval)
+  while read -r line; do
+    [ -z "$line" ] && continue
+    name=$(echo "$line" | cut -d'|' -f1)
+    link=$(echo "$line" | cut -d'|' -f2)
+    eval "node_$i=\"$link\""
+    eval "name_$i=\"$name\""
+    echo "$i. $name"
+    i=$((i+1))
+  done < "$NODES_FILE"
+
+  echo "$i. [新增节点]"
+  printf "请选择 [1-%d]: " "$i"
+  read -r node_choice
+
+  if [ "$node_choice" -eq "$i" ]; then
+    printf "请输入新节点备注名称: "
+    read -r new_name
+    printf "请输入 vless:// 链接: "
+    read -r new_link
+    echo "$new_name|$new_link" >> "$NODES_FILE"
+    SELECTED_LINK="$new_link"
+  else
+    eval "SELECTED_LINK=\$node_$node_choice"
+  fi
+
+  if [ -z "$SELECTED_LINK" ]; then echo "${RED}无效选择${PLAIN}"; return 1; fi
+
+  generate_xray_config "$SELECTED_LINK"
+  set_macos_proxy
+  trap unset_macos_proxy EXIT INT TERM
+
+  echo "${GREEN}VLESS 代理启动成功 (绕过大陆模式)...${PLAIN}"
   "$XRAY_BIN" run -c "$SCRIPT_DIR/config.json"
 }
 
