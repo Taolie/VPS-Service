@@ -46,12 +46,6 @@ while IFS='=' read -r key value; do
   export "$key=$value"
 done <"$CONFIG_FILE"
 
-# 检查配置是否填写
-if [ "$VPS_HOST" = "YOUR_VPS_IP" ]; then
-  echo "${RED}错误: 请先编辑 config.ini 填入 VPS IP 地址！${PLAIN}"
-  exit 1
-fi
-
 # ==============================================================================
 # 环境检测与适配
 # ==============================================================================
@@ -74,6 +68,27 @@ fi
 # ==============================================================================
 # 功能函数
 # ==============================================================================
+
+# 辅助: 检查并获取必要配置
+ensure_config() {
+  VAR_NAME="$1"
+  PROMPT_TEXT="$2"
+  # 使用 eval 获取变量值
+  eval "CURRENT_VAL=\${$VAR_NAME}"
+  
+  # 如果变量为空或为默认值，则提示输入
+  if [ -z "$CURRENT_VAL" ] || [ "$CURRENT_VAL" = "YOUR_VPS_IP" ] || [ "$CURRENT_VAL" = "YOUR_PASSWORD" ]; then
+    echo "${YELLOW}$PROMPT_TEXT${PLAIN}"
+    read -r INPUT_VAL
+    if [ -n "$INPUT_VAL" ]; then
+      export "$VAR_NAME=$INPUT_VAL"
+    else
+      echo "${RED}错误: 参数不能为空！${PLAIN}"
+      return 1
+    fi
+  fi
+  return 0
+}
 
 # 检查并安装依赖
 check_dependency() {
@@ -132,6 +147,9 @@ check_dependency() {
 # 启动 SSH 隧道
 start_ssh_tunnel() {
   if ! check_dependency "ssh"; then return; fi
+  
+  if ! ensure_config "VPS_HOST" "请输入 VPS IP 地址:"; then return; fi
+  if [ -z "$VPS_USER" ]; then VPS_USER="root"; fi
 
   echo "${GREEN}正在启动 SSH 隧道...${PLAIN}"
   echo "目标服务器: ${YELLOW}$VPS_USER@$VPS_HOST${PLAIN}"
@@ -154,6 +172,11 @@ start_ssh_tunnel() {
 # 启动 Shadowsocks
 start_ss_client() {
   if ! check_dependency "ss-local"; then return; fi
+
+  if ! ensure_config "VPS_HOST" "请输入 VPS IP 地址:"; then return; fi
+  if ! ensure_config "SS_PORT" "请输入 Shadowsocks 端口:"; then return; fi
+  if ! ensure_config "SS_PASSWORD" "请输入 Shadowsocks 密码:"; then return; fi
+  if ! ensure_config "SS_METHOD" "请输入加密方式 (默认 chacha20-ietf-poly1305):"; then return; fi
 
   echo "${GREEN}正在启动 Shadowsocks 客户端...${PLAIN}"
   echo "服务器: ${YELLOW}$VPS_HOST:$SS_PORT${PLAIN}"

@@ -31,18 +31,35 @@ Get-Content $ConfigFile | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | Fo
     }
 }
 
-# 检查配置是否填写
-if ($script:VPS_HOST -eq "YOUR_VPS_IP") {
-    Write-Output "错误: 请先编辑 config.ini 填入 VPS IP 地址！"
-    exit
-}
-
 # ==============================================================================
 # 功能函数
 # ==============================================================================
 
+function Ensure-Config {
+    param(
+        [string]$VarName,
+        [string]$PromptText
+    )
+    
+    $CurrentVal = Get-Variable -Name $VarName -Scope Script -ErrorAction SilentlyContinue
+    
+    if ($null -eq $CurrentVal -or $CurrentVal.Value -eq "" -or $CurrentVal.Value -eq "YOUR_VPS_IP" -or $CurrentVal.Value -eq "YOUR_PASSWORD") {
+        Write-Output ">> $PromptText"
+        $InputVal = Read-Host "输入"
+        if (-not [string]::IsNullOrWhiteSpace($InputVal)) {
+            New-Variable -Name $VarName -Value $InputVal -Force -Scope Script
+        } else {
+            Write-Output "错误: 参数不能为空！"
+            exit
+        }
+    }
+}
+
 function Start-SSHTunnel {
     param()
+    
+    Ensure-Config "VPS_HOST" "请输入 VPS IP 地址"
+    if (-not $script:VPS_USER) { $script:VPS_USER = "root" }
     
     Write-Output "正在启动 SSH 隧道..."
     Write-Output "目标服务器: $script:VPS_USER@$script:VPS_HOST"
@@ -54,6 +71,11 @@ function Start-SSHTunnel {
 
 function Start-SSClient {
     param()
+
+    Ensure-Config "VPS_HOST" "请输入 VPS IP 地址"
+    Ensure-Config "SS_PORT" "请输入 Shadowsocks 端口"
+    Ensure-Config "SS_PASSWORD" "请输入 Shadowsocks 密码"
+    if (-not $script:SS_METHOD) { $script:SS_METHOD = "chacha20-ietf-poly1305" }
 
     # 检查 ss-local 是否存在
     $SSPath = Join-Path $ScriptDir "ss-local.exe"
