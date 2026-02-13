@@ -191,10 +191,11 @@ echo "  本地端口: ${YELLOW}$LOCAL_PORT${PLAIN}"
 echo "==================================================="
 echo "1. ${GREEN}启动 SSH 隧道模式${PLAIN} (免安装)"
 echo "2. ${YELLOW}启动 Shadowsocks 模式${PLAIN} (更稳定)"
+echo "3. ${YELLOW}VLESS-Reality 模式${PLAIN} (推荐/更隐蔽)"
 echo "0. 退出"
 echo "==================================================="
 
-printf "请输入选项 [1-2]: "
+printf "请输入选项 [1-3]: "
 read -r choice
 
 case "$choice" in
@@ -203,6 +204,10 @@ case "$choice" in
   ;;
 2)
   start_ss_client
+  ;;
+3)
+  echo "${GREEN}VLESS-Reality 模式需要使用专用客户端 (如 v2rayN, v2rayNG)。${PLAIN}"
+  echo "请查看项目主页 ${YELLOW}README.md${PLAIN} 获取下载地址和配置方法。"
   ;;
 0)
   exit 0
