@@ -273,28 +273,55 @@ test_node_latency() {
   LINK="$1"
   NAME="$2"
   
-  # 解析 IP 和 端口
+  # 解析 IP 和 端口 (更健壮的方式)
+  # 移除 vless:// 前缀
   TEMP="${LINK#*://}"
-  TEMP="${TEMP#*@}"
+  # 移除 #备注
+  TEMP="${TEMP%%#*}"
+  
+  # 提取 @ 后面的部分 (IP:PORT?PARAMS)
+  if echo "$TEMP" | grep -q "@"; then
+      TEMP="${TEMP#*@}"
+  fi
+  
+  # 提取 IP 和 PORT
+  # 先去掉 ? 后面的参数
   ADDRESS="${TEMP%%\?*}"
+  
+  # 提取 IP (冒号前)
   IP="${ADDRESS%%:*}"
+  # 提取 PORT (冒号后)
   PORT="${ADDRESS#*:}"
+  
+  # 简单的正则校验 IP 和 Port
+  if [ -z "$IP" ] || [ -z "$PORT" ]; then
+      echo "${RED}配置错误${PLAIN}|99999|$LINK|$NAME"
+      return
+  fi
   
   # 优先使用 curl 测试 TCP 连接时间 (单位: 秒)
   # -w %{time_connect}: TCP 握手建立的时间
+  # --connect-timeout 2: 2秒超时
   LATENCY=$(curl -o /dev/null -s -w '%{time_connect}' --connect-timeout 2 "http://$IP:$PORT" 2>/dev/null)
   
-  if [ -n "$LATENCY" ] && [ "$LATENCY" != "0.000000" ]; then
-    # 转换为毫秒并取整
-    MS=$(echo "$LATENCY * 1000 / 1" | bc 2>/dev/null || awk "{print int($LATENCY * 1000)}")
-    if [ "$MS" -lt 100 ]; then
-      COLOR=$GREEN
-    elif [ "$MS" -lt 300 ]; then
-      COLOR=$YELLOW
-    else
-      COLOR=$RED
-    fi
-    echo "${COLOR}${MS}ms${PLAIN}|$LINK|$NAME"
+  # 检查 LATENCY 是否为有效的浮点数
+  if echo "$LATENCY" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+      if [ "$LATENCY" = "0.000000" ] || [ "$LATENCY" = "0" ]; then
+          # curl 可能会在某些失败情况下返回 0
+           echo "${RED}连接失败${PLAIN}|99999|$LINK|$NAME"
+      else
+          # 转换为毫秒并取整 (兼容 sh)
+          MS=$(awk "BEGIN {print int($LATENCY * 1000)}")
+          
+          if [ "$MS" -lt 100 ]; then
+            COLOR=$GREEN
+          elif [ "$MS" -lt 300 ]; then
+            COLOR=$YELLOW
+          else
+            COLOR=$RED
+          fi
+          echo "${COLOR}${MS}ms${PLAIN}|$LINK|$NAME"
+      fi
   else
     echo "${RED}超时${PLAIN}|99999|$LINK|$NAME"
   fi
@@ -735,49 +762,56 @@ start_vless_client() {
 # 主菜单
 # ==============================================================================
 
-clear
-echo "==================================================="
-echo "${BLUE}VPS 客户端统一连接工具${PLAIN}"
-if [ "$IS_OPENWRT" -eq 1 ]; then
-  echo "${YELLOW}(检测到 OpenWrt 环境: 已启用局域网共享模式)${PLAIN}"
-fi
-echo "==================================================="
-echo "当前配置:"
-echo "  VPS IP: ${YELLOW}$VPS_HOST${PLAIN}"
-echo "  本地端口: ${YELLOW}$LOCAL_PORT${PLAIN}"
-echo "==================================================="
-echo "1. ${GREEN}启动 SSH 隧道模式${PLAIN} (免安装)"
-echo "2. ${YELLOW}启动 Shadowsocks 模式${PLAIN} (更稳定)"
-echo "3. ${YELLOW}启动 VLESS-Reality 模式${PLAIN} (自动下载 Xray)"
-echo "4. ${RED}停止服务 & 清理规则${PLAIN}"
-echo "5. ${BLUE}节点管理 (测速/排序)${PLAIN}"
-echo "0. 退出"
-echo "==================================================="
+while true; do
+  clear
+  echo "==================================================="
+  echo "${BLUE}VPS 客户端统一连接工具${PLAIN}"
+  if [ "$IS_OPENWRT" -eq 1 ]; then
+    echo "${YELLOW}(检测到 OpenWrt 环境: 已启用局域网共享模式)${PLAIN}"
+  fi
+  echo "==================================================="
+  echo "当前配置:"
+  echo "  VPS IP: ${YELLOW}$VPS_HOST${PLAIN}"
+  echo "  本地端口: ${YELLOW}$LOCAL_PORT${PLAIN}"
+  echo "==================================================="
+  echo "1. ${GREEN}启动 SSH 隧道模式${PLAIN} (免安装)"
+  echo "2. ${YELLOW}启动 Shadowsocks 模式${PLAIN} (更稳定)"
+  echo "3. ${YELLOW}启动 VLESS-Reality 模式${PLAIN} (自动下载 Xray)"
+  echo "4. ${RED}停止服务 & 清理规则${PLAIN}"
+  echo "5. ${BLUE}节点管理 (测速/排序)${PLAIN}"
+  echo "0. 退出"
+  echo "==================================================="
 
-printf "请输入选项 [0-5]: "
-read -r choice
+  printf "请输入选项 [0-5]: "
+  read -r choice
 
-case "$choice" in
-1)
-  start_ssh_tunnel
-  ;;
-2)
-  start_ss_client
-  ;;
-3)
-  start_vless_client
-  ;;
-4)
-  stop_service
-  ;;
-5)
-  manage_nodes
-  ;;
-0)
-  exit 0
-  ;;
-*)
-  echo "${RED}无效选项，默认启动 SSH 隧道...${PLAIN}"
-  start_ssh_tunnel
-  ;;
-esac
+  case "$choice" in
+  1)
+    start_ssh_tunnel
+    ;;
+  2)
+    start_ss_client
+    ;;
+  3)
+    start_vless_client
+    ;;
+  4)
+    stop_service
+    ;;
+  5)
+    manage_nodes
+    ;;
+  0)
+    exit 0
+    ;;
+  *)
+    echo "${RED}无效选项，默认启动 SSH 隧道...${PLAIN}"
+    start_ssh_tunnel
+    ;;
+  esac
+  
+  # 每次操作完暂停一下（除了退出和进入子菜单）
+  if [ "$choice" != "5" ] && [ "$choice" != "0" ]; then
+      printf "按回车继续..." && read -r _
+  fi
+done
