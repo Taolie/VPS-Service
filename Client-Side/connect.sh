@@ -271,12 +271,12 @@ unset_system_proxy() {
 # 参数: $1=节点链接, $2=节点名称
 test_node_latency() {
   LINK="$1"
-  NAME="$2"
+  NODE_NAME="$2"
   
   # 解析 IP 和 端口 (更健壮的方式)
   # 移除 vless:// 前缀
   TEMP="${LINK#*://}"
-  # 移除 #备注
+  # 移除 #备注 (这里只是为了取IP，名称直接用传进来的 $NODE_NAME)
   TEMP="${TEMP%%#*}"
   
   # 提取 @ 后面的部分 (IP:PORT?PARAMS)
@@ -295,7 +295,7 @@ test_node_latency() {
   
   # 简单的正则校验 IP 和 Port
   if [ -z "$IP" ] || [ -z "$PORT" ]; then
-      echo "${RED}配置错误${PLAIN}|99999|$LINK|$NAME"
+      echo "${RED}配置错误${PLAIN}|99999|$LINK|$NODE_NAME"
       return
   fi
   
@@ -308,10 +308,11 @@ test_node_latency() {
   if echo "$LATENCY" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
       if [ "$LATENCY" = "0.000000" ] || [ "$LATENCY" = "0" ]; then
           # curl 可能会在某些失败情况下返回 0
-           echo "${RED}连接失败${PLAIN}|99999|$LINK|$NAME"
+           echo "${RED}连接失败${PLAIN}|99999|$LINK|$NODE_NAME"
       else
           # 转换为毫秒并取整 (兼容 sh)
-          MS=$(awk "BEGIN {print int($LATENCY * 1000)}")
+          # 使用 awk 进行浮点数运算，避免 bc 依赖
+          MS=$(awk -v lat="$LATENCY" 'BEGIN { printf "%.0f", lat * 1000 }')
           
           if [ "$MS" -lt 100 ]; then
             COLOR=$GREEN
@@ -320,10 +321,10 @@ test_node_latency() {
           else
             COLOR=$RED
           fi
-          echo "${COLOR}${MS}ms${PLAIN}|$LINK|$NAME"
+          echo "${COLOR}${MS}ms${PLAIN}|$LINK|$NODE_NAME"
       fi
   else
-    echo "${RED}超时${PLAIN}|99999|$LINK|$NAME"
+    echo "${RED}超时${PLAIN}|99999|$LINK|$NODE_NAME"
   fi
 }
 
